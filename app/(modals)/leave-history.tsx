@@ -23,16 +23,31 @@ interface LeaveItem {
   type: string;
   startDate: string;
   endDate: string;
-  status: string;
+  status: string; // Database status
+  displayStatus: string; // UI friendly
   duration: string;
 }
 
 export default function LeaveHistoryScreen() {
   const router = useRouter();
-  const [activeFilter, setActiveFilter] = useState<string>("Semua");
+  const [activeFilter, setActiveFilter] = useState<string>("All"); // Filter based on internal code or UI? Let's use internal code
   const { history, loading } = useUserData();
 
-  const filters = ["Semua", "Disetujui", "Dalam Proses", "Ditolak"];
+  const filters = [
+    { label: "Semua", value: "All" },
+    { label: "Disetujui", value: "approved" },
+    { label: "Dalam Proses", value: "pending" },
+    { label: "Ditolak", value: "rejected" },
+  ];
+
+  const mapStatusToDisplay = (status: string) => {
+    switch(status) {
+      case 'approved': return "Disetujui";
+      case 'rejected': return "Ditolak";
+      case 'pending': return "Dalam Proses";
+      default: return status;
+    }
+  };
 
   // Transform Supabase data to UI format
   const leaveHistory: LeaveItem[] = useMemo(() => {
@@ -44,10 +59,12 @@ export default function LeaveHistoryScreen() {
 
       return {
         id: req.id,
-        type: req.leave_type,
-        startDate: req.start_date,
-        endDate: req.end_date,
+        // Use the joined name if available, otherwise fallback to generic
+        type: req.leave_types?.name || "Cuti",
+        startDate: start.toLocaleDateString(),
+        endDate: end.toLocaleDateString(),
         status: req.status,
+        displayStatus: mapStatusToDisplay(req.status),
         duration: `${days} days`,
       };
     });
@@ -56,20 +73,17 @@ export default function LeaveHistoryScreen() {
   const getStatusStyles = useMemo(() => {
     return (status: string) => {
       switch (status) {
-        case "Disetujui":
-        case "Approved":
+        case "approved":
           return {
             bg: "bg-green-500",
             text: "text-white",
           };
-        case "Ditolak":
-        case "Rejected":
+        case "rejected":
           return {
             bg: "bg-red-500",
             text: "text-white",
           };
-        case "Dalam Proses":
-        case "Pending":
+        case "pending":
           return {
             bg: "bg-orange-500",
             text: "text-white",
@@ -85,14 +99,11 @@ export default function LeaveHistoryScreen() {
 
   const getStatusIcon = (status: string): JSX.Element => {
     switch (status) {
-      case "Disetujui":
-      case "Approved":
+      case "approved":
         return <CheckCircle color="#10B981" size={20} />;
-      case "Ditolak":
-      case "Rejected":
+      case "rejected":
         return <XCircle color="#EF4444" size={20} />;
-      case "Dalam Proses":
-      case "Pending":
+      case "pending":
         return <Clock color="#F59E0B" size={20} />;
       default:
         return <Calendar color="#6B7280" size={20} />;
@@ -100,7 +111,7 @@ export default function LeaveHistoryScreen() {
   };
 
   const filteredHistory = leaveHistory.filter((item) => {
-    if (activeFilter === "Semua") return true;
+    if (activeFilter === "All") return true;
     return item.status === activeFilter;
   });
 
@@ -128,10 +139,10 @@ export default function LeaveHistoryScreen() {
             >
               {filters.map((filter) => (
                 <TouchableOpacity
-                  key={filter}
-                  onPress={() => setActiveFilter(filter)}
+                  key={filter.value}
+                  onPress={() => setActiveFilter(filter.value)}
                   className={`px-6 py-3 rounded-full mr-3 ${
-                    activeFilter === filter
+                    activeFilter === filter.value
                       ? "bg-blue-500"
                       : "bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700"
                   }`}
@@ -139,12 +150,12 @@ export default function LeaveHistoryScreen() {
                 >
                   <Text
                     className={`font-medium ${
-                      activeFilter === filter
+                      activeFilter === filter.value
                         ? "text-white"
                         : "text-gray-600 dark:text-gray-300"
                     }`}
                   >
-                    {filter}
+                    {filter.label}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -190,7 +201,7 @@ export default function LeaveHistoryScreen() {
 
                       <View className={`${statusStyles.bg} px-3 py-1 rounded-full`}>
                         <Text className={`${statusStyles.text} text-xs font-medium`}>
-                          {leave.status}
+                          {leave.displayStatus}
                         </Text>
                       </View>
                     </View>

@@ -2,45 +2,38 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/context/AuthContext';
 
-export type Employee = {
-  id: string;
-  user_id: string;
+export type UserProfile = {
+  id: string; // user_id
   full_name: string;
-  email: string;
-  position: string; // Changed from job_title
   department: string;
+  role: string;
+  leave_balance: number;
+  basic_salary: number;
   join_date: string;
+  status: string;
   avatar_url?: string;
-  role: string; // Added role
-  phone_number?: string; // Added phone_number
-  address?: string; // Added address, though we know it might be missing
-};
-
-export type LeaveBalance = {
-  id: string;
-  employee_id: string;
-  leave_type: string;
-  total_allocation: number;
-  used_amount: number;
-  remaining_amount: number;
-  year: number;
+  email?: string; // Optional, usually from auth
 };
 
 export type LeaveRequest = {
   id: string;
-  employee_id: string;
-  leave_type: string;
+  user_id: string;
+  leave_type: string; // or joined object
   start_date: string;
   end_date: string;
   reason: string;
-  status: 'Dalam Proses' | 'Disetujui' | 'Ditolak';
+  status: 'pending' | 'approved' | 'rejected';
   created_at: string;
+  leave_types?: {
+    name: string;
+    code: string;
+    badge_color: string;
+  };
 };
 
 export const useUserData = () => {
   const { user } = useAuth();
-  const [employee, setEmployee] = useState<Employee | null>(null);
-  const [balances, setBalances] = useState<LeaveBalance[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [history, setHistory] = useState<LeaveRequest[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -53,43 +46,34 @@ export const useUserData = () => {
     try {
       setLoading(true);
 
-      // 1. Fetch Employee Profile linked to Auth User
-      const { data: empData, error: empError } = await supabase
-        .from('employees')
+      // 1. Fetch Profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
         .select('*')
-        .eq('user_id', user.id)
+        .eq('id', user.id)
         .single();
 
-      if (empError) {
-        console.error('Error fetching employee:', empError);
-        // If employee not found, we can't fetch balances/history
-        setEmployee(null);
-        setBalances([]);
-        setHistory([]);
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
+        setProfile(null);
       } else {
-        setEmployee(empData);
-
-        if (empData?.id) {
-          // 2. Fetch Leave Balances
-          const { data: balData, error: balError } = await supabase
-            .from('leave_balances')
-            .select('*')
-            .eq('employee_id', empData.id);
-
-          if (balError) console.error('Error fetching balances:', balError);
-          setBalances(balData || []);
-
-          // 3. Fetch Leave History (Requests)
-          const { data: histData, error: histError } = await supabase
-            .from('leave_requests')
-            .select('*')
-            .eq('employee_id', empData.id)
-            .order('created_at', { ascending: false });
-
-          if (histError) console.error('Error fetching history:', histError);
-          setHistory(histData || []);
-        }
+        setProfile({ ...profileData, email: user.email });
       }
+
+      // 2. Fetch History (Requests)
+      // Note: We join leave_types to get color and name if needed
+      const { data: histData, error: histError } = await supabase
+        .from('leave_requests')
+        .select('*, leave_types(name, code, badge_color)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (histError) {
+        console.error('Error fetching history:', histError);
+      } else {
+        setHistory(histData || []);
+      }
+
     } catch (err) {
       console.error('Unexpected error in useUserData:', err);
     } finally {
@@ -102,8 +86,7 @@ export const useUserData = () => {
   }, [fetchUserData]);
 
   return {
-    employee,
-    balances,
+    profile,
     history,
     loading,
     refetch: fetchUserData,

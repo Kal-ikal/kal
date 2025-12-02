@@ -46,21 +46,16 @@ type FormData = {
 };
 
 type LeaveType = {
-  id: string;
+  id: string; // The database ID
   name: string;
+  code: string;
+  requires_file: boolean;
+  is_quota_deduction: boolean;
 };
 
 // ===========================
 // CONSTANTS
 // ===========================
-const LEAVE_TYPES: LeaveType[] = [
-  { id: "Cuti Tahunan", name: "Annual Leave" },
-  { id: "Cuti Sakit", name: "Sick Leave" },
-  { id: "Cuti Darurat", name: "Emergency Leave" },
-  { id: "Cuti Melahirkan", name: "Maternity Leave" },
-  { id: "Cuti Lainnya", name: "Other Leave" },
-];
-
 const TOTAL_STEPS = 3;
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 
@@ -74,7 +69,7 @@ export default function LeaveApplicationForm() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isDarkMode: isDark } = useTheme();
-  const { employee } = useUserData();
+  const { profile } = useUserData(); // Use profile from new hook
   const { onScroll } = useScrollHandler();
 
   // ===========================
@@ -94,6 +89,8 @@ export default function LeaveApplicationForm() {
   const [datePickerField, setDatePickerField] = useState<"start" | "end">("start");
   const [tempDate, setTempDate] = useState(new Date());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
+  const [loadingTypes, setLoadingTypes] = useState(true);
 
   // ===========================
   // REFS
@@ -103,6 +100,25 @@ export default function LeaveApplicationForm() {
   // ===========================
   // EFFECTS
   // ===========================
+
+  // Fetch Leave Types
+  useEffect(() => {
+    const fetchLeaveTypes = async () => {
+      try {
+        setLoadingTypes(true);
+        const { data, error } = await supabase.from('leave_types').select('*').order('name');
+        if (error) throw error;
+        setLeaveTypes(data || []);
+      } catch (e) {
+        console.error("Error fetching leave types:", e);
+        Alert.alert("Error", "Failed to load leave types");
+      } finally {
+        setLoadingTypes(false);
+      }
+    };
+
+    fetchLeaveTypes();
+  }, []);
 
   // Reset form saat screen fokus
   useFocusEffect(
@@ -234,13 +250,26 @@ export default function LeaveApplicationForm() {
       }
     }
 
-    if (currentStep === 3 && !formData.reason.trim()) {
-      newErrors.reason = "Reason is required";
+    if (currentStep === 3) {
+      if (!formData.reason.trim()) {
+        newErrors.reason = "Reason is required";
+      }
+
+      // Check if file is required for this leave type (Updated Logic)
+      const selectedType = leaveTypes.find(t => t.id === formData.leaveType);
+
+      if (selectedType?.requires_file && formData.documents.length === 0) {
+          // You might want to enforce this or just show a warning.
+          // For now, let's just log it or maybe enforce if business logic requires.
+          // Let's assume enforcing if requires_file is true
+          Alert.alert("Requirement", `${selectedType.name} requires a supporting document.`);
+          return false; // Block next step
+      }
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [currentStep, formData.leaveType, formData.startDate, formData.endDate, formData.reason]);
+  }, [currentStep, formData.leaveType, formData.startDate, formData.endDate, formData.reason, leaveTypes, formData.documents]);
 
   const formatDate = useCallback((dateString: string): string => {
     if (!dateString) return "" as string;
@@ -257,7 +286,7 @@ export default function LeaveApplicationForm() {
     const formattedEndDate = formatDate(formData.endDate);
     const totalDays = formData.days;
 
-    if (!employee?.id) {
+    if (!profile?.id) {
       Alert.alert("Error", "User data not found. Please try reloading the app.");
       return;
     }
@@ -274,66 +303,23 @@ export default function LeaveApplicationForm() {
               setIsSubmitting(true);
 
               // 1. Insert into leave_requests
+              // NOTE: Assuming 'leave_type' column expects the UUID of the leave type
               const { data: requestData, error: insertError } = await supabase
                 .from('leave_requests')
                 .insert({
-                  employee_id: employee.id,
-                  leave_type: formData.leaveType,
+                  user_id: profile.id, // Changed from employee_id to user_id
+                  leave_type: formData.leaveType, // This is the ID now
                   start_date: formData.startDate,
                   end_date: formData.endDate,
                   reason: formData.reason,
-                  status: 'Dalam Proses', // Status awal
-                  current_step_order: 1, // Step awal
+                  status: 'pending', // Database status
+                  current_stage: 'manager', // Initial stage
+                  // current_step_order: 1, // Removed if not in schema, relying on default
                 })
                 .select('id') // Retrieve the ID
                 .single();
 
               if (insertError) throw insertError;
-              if (!requestData) throw new Error("Failed to retrieve new request ID");
-
-              const newRequestId = requestData.id;
-
-              // 2. Bulk Insert into approval_steps
-              // Fixed column names to match database schema
-              const approvalSteps = [
-                {
-                  leave_request_id: newRequestId,
-                  step_name: "Handover/Rekan Kerja",
-                  approver_role: "manager",
-                  step_order: 1,
-                  status: "Dalam Proses",
-                },
-                {
-                  leave_request_id: newRequestId,
-                  step_name: "DFD",
-                  approver_role: "dfd_lead",
-                  step_order: 2,
-                  status: "Dalam Proses",
-                },
-                {
-                  leave_request_id: newRequestId,
-                  step_name: "HRD",
-                  approver_role: "hrd",
-                  step_order: 3,
-                  status: "Dalam Proses",
-                },
-                {
-                  leave_request_id: newRequestId,
-                  step_name: "Admin Final",
-                  approver_role: "admin",
-                  step_order: 4,
-                  status: "Dalam Proses",
-                },
-              ];
-
-              const { error: stepsError } = await supabase
-                .from('approval_steps')
-                .insert(approvalSteps);
-
-              if (stepsError) {
-                console.error("Error inserting steps:", stepsError);
-                throw new Error("Failed to initialize approval workflow.");
-              }
 
               Alert.alert(
                 "Application Submitted",
@@ -360,7 +346,7 @@ export default function LeaveApplicationForm() {
         },
       ]
     );
-  }, [formData, formatDate, router, employee]);
+  }, [formData, formatDate, router, profile]);
 
   const handleNext = useCallback(() => {
     Keyboard.dismiss();
@@ -502,40 +488,45 @@ export default function LeaveApplicationForm() {
         >
           Select Leave Type
         </Text>
-        {LEAVE_TYPES.map((type) => (
-          <TouchableOpacity
-            key={type.id}
-            className={`p-4 rounded-xl border ${
-              formData.leaveType === type.id
-                ? "bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400"
-                : `${
-                    isDark
-                      ? "bg-gray-800 border-gray-700"
-                      : "bg-white border-gray-200"
-                  }`
-            }`}
-            onPress={() => handleInputChange("leaveType", type.id)}
-            activeOpacity={0.7}
-          >
-            <Text
-              className={`text-base ${
+        {loadingTypes ? (
+            <ActivityIndicator size="small" color="#3B82F6" />
+        ) : (
+          leaveTypes.map((type) => (
+            <TouchableOpacity
+              key={type.id}
+              className={`p-4 rounded-xl border ${
                 formData.leaveType === type.id
-                  ? "text-blue-600 dark:text-blue-300 font-semibold"
-                  : isDark
-                    ? "text-gray-300"
-                    : "text-gray-700"
+                  ? "bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400"
+                  : `${
+                      isDark
+                        ? "bg-gray-800 border-gray-700"
+                        : "bg-white border-gray-200"
+                    }`
               }`}
+              onPress={() => handleInputChange("leaveType", type.id)} // Store ID
+              activeOpacity={0.7}
             >
-              {type.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                className={`text-base ${
+                  formData.leaveType === type.id
+                    ? "text-blue-600 dark:text-blue-300 font-semibold"
+                    : isDark
+                      ? "text-gray-300"
+                      : "text-gray-700"
+                }`}
+              >
+                {type.name}
+              </Text>
+              {type.is_quota_deduction && <Text className="text-xs text-red-400 mt-1">Reduces Quota</Text>}
+            </TouchableOpacity>
+          ))
+        )}
         {errors.leaveType ? (
           <Text className="text-red-500 text-sm">{errors.leaveType}</Text>
         ) : null}
       </View>
     ),
-    [formData.leaveType, errors.leaveType, isDark, handleInputChange]
+    [formData.leaveType, errors.leaveType, isDark, handleInputChange, leaveTypes, loadingTypes]
   );
 
   const renderStepTwo = useMemo(

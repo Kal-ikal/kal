@@ -79,12 +79,13 @@ export default function DashboardScreen() {
   const setIsTabBarVisible = useTabBarStore((state) => state.setIsVisible);
 
   // Use the centralized hook
-  const { employee, balances, history, refetch } = useUserData();
+  const { profile, history, refetch } = useUserData();
 
   // Derived State
+  // Use "Cuti Tahunan" instead of Annual
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalanceUI[]>([
-    { type: "Annual", days: 12, used: 0, color: "#3B82F6" },
-    { type: "Sick", days: 10, used: 0, color: "#10B981" },
+    { type: "Cuti Tahunan", days: 12, used: 0, color: "#3B82F6" },
+    { type: "Sakit", days: 10, used: 0, color: "#10B981" },
     { type: "Special", days: 5, used: 0, color: "#8B5CF6" },
   ]);
   const [monthlyUsageData, setMonthlyUsageData] = useState<{value: number, label: string}[]>([
@@ -96,9 +97,9 @@ export default function DashboardScreen() {
       { value: 0, label: "Jun" },
   ]);
   const [yearlyUsageData, setYearlyUsageData] = useState<{value: number, label: string}[]>([
-    { value: 0, label: "Annual" },
-    { value: 0, label: "Sick" },
-    { value: 0, label: "Special" },
+    { value: 0, label: "Cuti Tahunan" },
+    { value: 0, label: "Sakit" },
+    { value: 0, label: "Lainnya" },
   ]);
   const [upcomingLeaves, setUpcomingLeaves] = useState<UpcomingLeaveUI[]>([]);
 
@@ -138,7 +139,7 @@ export default function DashboardScreen() {
 
   // Process data when hooks return data
   useEffect(() => {
-    if (employee) {
+    if (profile) {
       let annualUsed = 0;
       let sickUsed = 0;
       let specialUsed = 0;
@@ -158,32 +159,35 @@ export default function DashboardScreen() {
         const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
         const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
-        if (req.status === 'Disetujui') {
+        // Correctly handle leave types by CODE from joined table
+        const code = (req.leave_types?.code || '').toUpperCase();
+
+        // Use 'approved' instead of 'Disetujui'
+        if (req.status === 'approved') {
           if (startDate.getFullYear() === currentYear) {
               const monthName = months[startDate.getMonth()];
               monthlyMap.set(monthName, (monthlyMap.get(monthName) || 0) + days);
           }
-          const typeLower = req.leave_type.toLowerCase();
-          if (typeLower.includes('tahunan') || typeLower.includes('annual')) {
+
+          if (code === 'CT') { // Cuti Tahunan
               annualUsed += days;
-          } else if (typeLower.includes('sakit') || typeLower.includes('sick')) {
+          } else if (code === 'SK') { // Sakit
               sickUsed += days;
           } else {
               specialUsed += days;
           }
         }
 
-        if (req.status === 'Disetujui' && startDate > today) {
+        if (req.status === 'approved' && startDate > today) {
             let color = "#3B82F6";
-            let displayType = "Annual Leave";
+            let displayType = "Cuti Tahunan";
 
-            const typeLower = req.leave_type.toLowerCase();
-            if (typeLower.includes('sakit') || typeLower.includes('sick')) {
+            if (code === 'SK') {
               color = "#10B981";
-              displayType = "Sick Leave";
-            } else if (!typeLower.includes('tahunan') && !typeLower.includes('annual')) {
+              displayType = "Sakit";
+            } else if (code !== 'CT') {
               color = "#8B5CF6";
-              displayType = req.leave_type;
+              displayType = req.leave_types?.name || 'Special';
             }
 
             const options: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short', year: 'numeric' };
@@ -203,13 +207,13 @@ export default function DashboardScreen() {
         }
       });
 
-      // Update State
-      const annualAlloc = balances.find(b => b.leave_type === 'Annual' || b.leave_type === 'Cuti Tahunan')?.total_allocation || 12;
+      // Update State - use profile.leave_balance for Annual
+      const estimatedAlloc = (profile.leave_balance || 0) + annualUsed;
 
       setLeaveBalances([
-        { type: "Annual", days: annualAlloc, used: annualUsed, color: "#3B82F6" },
-        { type: "Sick", days: 10, used: sickUsed, color: "#10B981" },
-        { type: "Special", days: 5, used: specialUsed, color: "#8B5CF6" },
+        { type: "Cuti Tahunan", days: estimatedAlloc, used: annualUsed, color: "#3B82F6" },
+        { type: "Sakit", days: 10 + sickUsed, used: sickUsed, color: "#10B981" }, // Mock allocation
+        { type: "Lainnya", days: 5 + specialUsed, used: specialUsed, color: "#8B5CF6" }, // Mock allocation
       ]);
 
       const mData = months.slice(0, 6).map(m => ({
@@ -219,15 +223,15 @@ export default function DashboardScreen() {
       setMonthlyUsageData(mData);
 
       setYearlyUsageData([
-          { value: annualUsed, label: "Annual" },
-          { value: sickUsed, label: "Sick" },
-          { value: specialUsed, label: "Special" }
+          { value: annualUsed, label: "Cuti Tahunan" },
+          { value: sickUsed, label: "Sakit" },
+          { value: specialUsed, label: "Lainnya" }
       ]);
 
       upcoming.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
       setUpcomingLeaves(upcoming.slice(0, 3));
     }
-  }, [employee, balances, history]);
+  }, [profile, history]);
 
   const quickActions: QuickAction[] = [
     {
@@ -287,7 +291,7 @@ export default function DashboardScreen() {
               Annual & Benefit
             </Text>
             <Text className="text-blue-100 text-sm mt-1">
-              {employee ? `${employee.full_name} • ${employee.role || '-'}` : "Welcome User"}
+              {profile ? `${profile.full_name} • ${profile.role || '-'}` : "Welcome User"}
             </Text>
           </View>
 
@@ -355,7 +359,7 @@ export default function DashboardScreen() {
                       isDarkMode ? "text-gray-300" : "text-gray-500"
                     } text-sm`}
                   >
-                    {leave.type} Leave
+                    {leave.type}
                   </Text>
                   <Text
                     className={`${
