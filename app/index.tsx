@@ -1,11 +1,13 @@
 import React, { useState, useCallback } from "react";
 import { View, Text, Image, TouchableOpacity, ScrollView, RefreshControl, StyleSheet, Platform } from "react-native";
-import { useSmartNavigation } from '../hooks/useSmartNavigation';
+// Hapus useSmartNavigation karena kita akan pakai router langsung untuk login
 import { useCustomBackHandler } from '../hooks/useCustomBackHandler';
 import { Calendar, BarChart2, Users, Shield, Plus } from "lucide-react-native";
 // PERUBAHAN 1: Hapus SafeAreaView, Import useSafeAreaInsets
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+// Tambahkan useRouter
+import { useRouter } from "expo-router";
 import "./global.css"
 
 interface Feature {
@@ -20,7 +22,8 @@ interface FAQ {
 }
 
 const LandingScreen: React.FC = () => {
-  const { navigateToDetail } = useSmartNavigation();
+  // Ganti useSmartNavigation dengan useRouter
+  const router = useRouter();
   useCustomBackHandler();
   
   // PERUBAHAN 2: Gunakan hook insets
@@ -144,14 +147,15 @@ const LandingScreen: React.FC = () => {
               />
             </View>
             
+            {/* BUTTON FIX: Menggunakan router.push */}
             <TouchableOpacity
-              onPress={() => navigateToDetail("/(auth)/login")}
+              onPress={() => router.push("/(auth)/login")}
               style={styles.primaryButton}
             >
               <Text style={styles.primaryButtonText}>Get Started</Text>
             </TouchableOpacity>
           </View>
-        </View>     
+        </View>      
 
         {/* Interactive Features Section */}
         <View style={styles.featuresSection}>
