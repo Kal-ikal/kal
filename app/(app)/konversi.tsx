@@ -22,6 +22,7 @@ import { StatusBar } from "expo-status-bar";
 import { useTheme } from "@/context/ThemeContext";
 import { supabase } from '@/lib/supabase';
 import { useScrollHandler } from "@/hooks/useScrollHandler";
+import { useUserData } from "@/hooks/useUserData";
 
 cssInterop(LinearGradient, { className: "style" });
 
@@ -47,7 +48,7 @@ export default function LeaveConversionScreen() {
   const [conversionRequested, setConversionRequested] = useState(false);
   const [leaveBalances, setLeaveBalances] = useState<LeaveBalance[]>([]);
   const { onScroll } = useScrollHandler();
-  // Removed unused isLoading state
+  const { profile } = useUserData();
 
   // ✅ Ref untuk ScrollView
   const scrollRef = useRef<ScrollView>(null);
@@ -60,95 +61,59 @@ export default function LeaveConversionScreen() {
       fetchLeaveBalances();
 
       return () => {};
-    }, [])
+    }, [profile])
   );
 
   const fetchLeaveBalances = async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!profile) return;
 
-      const { data: employee } = await supabase
-        .from('employees')
-        .select('id')
-        .eq('user_id', user.id)
-        .single();
+      // 1. Get Basic Salary from Profile (Web Admin uses salary / 21)
+      const salary = profile.basic_salary || 0;
+      const dailyRate = Math.floor(salary / 21);
 
-      if (!employee) return;
-
-      // Fetch real balances - assuming simple schema or mocking 'eligible' logic
-      // Since I don't see a complex leave_balances schema with eligible days, I will simulate it
-      // based on the logic from home.tsx (improvisation)
-
-      // Fetch requests to calculate used
+      // 2. Calculate Used Annual Leave from History
       const { data: requests } = await supabase
           .from('leave_requests')
-          .select('*')
-          .eq('employee_id', employee.id)
-          .eq('status', 'Disetujui');
+          .select('*, leave_types(name)')
+          .eq('user_id', profile.id)
+          .eq('status', 'approved');
 
       let annualUsed = 0;
-      let sickUsed = 0;
-      let specialUsed = 0;
 
       if (requests) {
         requests.forEach((req: any) => {
-            const startDate = new Date(req.start_date);
-            const endDate = new Date(req.end_date);
-            const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-            const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-            const typeLower = req.leave_type.toLowerCase();
+            // Updated to check joined name instead of UUID
+            const typeLower = (req.leave_types?.name || '').toLowerCase();
             if (typeLower.includes('tahunan') || typeLower.includes('annual')) {
+                 const startDate = new Date(req.start_date);
+                 const endDate = new Date(req.end_date);
+                 const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
+                 const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
                  annualUsed += days;
-            } else if (typeLower.includes('sakit') || typeLower.includes('sick')) {
-                 sickUsed += days;
-            } else {
-                 specialUsed += days;
             }
         });
       }
 
-      // Defaults (allocations)
-      const annualAlloc = 15;
-      const sickAlloc = 10;
-      const specialAlloc = 5;
-
-      // Eligibility logic (Improvisation)
-      // Only Annual leave is eligible for conversion usually
-      const annualEligible = Math.max(0, annualAlloc - annualUsed - 5); // Must keep 5 days? Just an example logic
+      // 3. Determine Eligibility
+      const eligible = profile.leave_balance || 0;
 
       setLeaveBalances([
-        { type: "Annual", days: annualAlloc, used: annualUsed, eligible: annualEligible, rate: 150 }, // $150 per day
-        { type: "Sick", days: sickAlloc, used: sickUsed, eligible: 0, rate: 100 },
-        { type: "Special", days: specialAlloc, used: specialUsed, eligible: 0, rate: 200 },
+        { type: "Annual", days: eligible + annualUsed, used: annualUsed, eligible: eligible, rate: dailyRate },
       ]);
 
     } catch (error) {
       console.error("Error fetching conversion data:", error);
-    } finally {
-      // No loading state to toggle
     }
   };
-
-  // ✅ Data pajak (mock) - useMemo untuk performa
-  const taxBrackets: TaxBracket[] = useMemo(
-    () => [
-      { min: 0, max: 5000, rate: 10 },
-      { min: 5001, max: 10000, rate: 15 },
-      { min: 10001, max: 20000, rate: 20 },
-      { min: 20001, max: "Infinity", rate: 25 },
-    ],
-    []
-  );
 
   // ✅ Eligibility criteria - useMemo untuk performa
   const eligibilityCriteria = useMemo(
     () => [
-      "Annual leave days must be unused for at least 6 months",
-      "Maximum 10 days can be converted per calendar year",
-      "Conversion requests are processed within 5 business days",
-      "Converted amounts will be added to your next paycheck",
+      "Calculation Formula: (Basic Salary / 21) * Days",
+      "Only Annual Leave balance can be converted",
+      "Request will be reviewed by HR/Admin",
+      "Ensure your bank details are up to date",
     ],
     []
   );
@@ -163,14 +128,12 @@ export default function LeaveConversionScreen() {
       (sum, leave) => sum + leave.eligible * leave.rate,
       0
     );
-    const taxAmount = totalAmountBeforeTax * 0.15; // 15% pajak demo
-    const netAmount = totalAmountBeforeTax - taxAmount;
 
     return {
       totalEligibleDays,
       totalAmountBeforeTax,
-      taxAmount,
-      netAmount,
+      taxAmount: 0,
+      netAmount: totalAmountBeforeTax,
     };
   }, [leaveBalances]);
 
@@ -183,30 +146,36 @@ export default function LeaveConversionScreen() {
 
     Alert.alert(
       "Leave Conversion Request",
-      `You are requesting to convert ${calculations.totalEligibleDays} days for a net amount of $${calculations.netAmount.toFixed(
-        2
-      )}. This action cannot be undone.`,
+      `You are requesting to convert ${calculations.totalEligibleDays} days for a total of IDR ${calculations.netAmount.toLocaleString('id-ID')}. This action cannot be undone.`,
       [
         { text: "Cancel", style: "cancel" },
         {
           text: "Confirm",
           onPress: async () => {
             try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (!user) throw new Error("Not authenticated");
+                if (!profile) throw new Error("Not authenticated");
 
-                const { data: employee } = await supabase.from('employees').select('id').eq('user_id', user.id).single();
-                if (!employee) throw new Error("Employee not found");
+                const { data: typeData } = await supabase
+                    .from('leave_types')
+                    .select('id')
+                    .ilike('name', '%konversi%')
+                    .single();
 
-                // Insert into leave_requests as a 'Konversi Cuti' type since we are improvising database compatibility
+                let typeId = typeData?.id;
+
+                if (!typeId) {
+                     const { data: anyType } = await supabase.from('leave_types').select('id').limit(1).single();
+                     typeId = anyType?.id;
+                }
+
                 const { error } = await supabase.from('leave_requests').insert({
-                    employee_id: employee.id,
-                    leave_type: 'Konversi Cuti',
+                    user_id: profile.id,
+                    leave_type: typeId,
                     start_date: new Date().toISOString(),
                     end_date: new Date().toISOString(),
-                    reason: `Conversion of ${calculations.totalEligibleDays} days. Net: $${calculations.netAmount}`,
-                    status: 'Dalam Proses',
-                    user_id: user.id
+                    reason: `REQUEST ENCASMENT: ${calculations.totalEligibleDays} days. Est: IDR ${calculations.netAmount}`,
+                    status: 'pending',
+                    current_stage: 'hrd',
                 });
 
                 if (error) throw error;
@@ -214,8 +183,8 @@ export default function LeaveConversionScreen() {
                 setConversionRequested(true);
 
                 Alert.alert(
-                "Conversion Requested",
-                "Your leave conversion request has been submitted successfully. You will receive a confirmation email shortly.",
+                "Request Submitted",
+                "Your conversion request has been sent to HR.",
                 [
                     {
                     text: "OK",
@@ -232,7 +201,7 @@ export default function LeaveConversionScreen() {
         },
       ]
     );
-  }, [calculations, router]);
+  }, [calculations, router, profile]);
 
   return (
     <View className={`${isDark ? "bg-gray-900" : "bg-[#F7F7F7]"} flex-1`}>
@@ -282,7 +251,7 @@ export default function LeaveConversionScreen() {
                 isDark ? "text-white" : "text-[#1A1D23]"
               } text-lg font-bold`}
             >
-              Eligible Days for Conversion
+              Eligible Days
             </Text>
             <Info color={isDark ? "#9CA3AF" : "#6B7280"} size={20} />
           </View>
@@ -300,7 +269,7 @@ export default function LeaveConversionScreen() {
                     isDark ? "text-gray-300" : "text-gray-600"
                   } text-sm mb-1`}
                 >
-                  {leave.type} Leave
+                  {leave.type} Balance
                 </Text>
                 <Text
                   className={`${
@@ -310,35 +279,12 @@ export default function LeaveConversionScreen() {
                   {leave.eligible}
                 </Text>
                 <Text className="text-gray-500 text-xs mt-1">
-                  {leave.used} used / {leave.days} total
+                  Rate: IDR {leave.rate.toLocaleString('id-ID')}/day
                 </Text>
               </View>
             )) : (
                 <Text className="text-gray-500">Loading balances...</Text>
             )}
-          </View>
-
-          <View
-            className={`${
-              isDark ? "bg-blue-900/30" : "bg-blue-50"
-            } rounded-xl p-4`}
-          >
-            <View className="flex-row justify-between">
-              <Text
-                className={`${
-                  isDark ? "text-blue-200" : "text-blue-800"
-                } font-medium`}
-              >
-                Total Eligible Days
-              </Text>
-              <Text
-                className={`${
-                  isDark ? "text-blue-200" : "text-blue-800"
-                } font-bold text-lg`}
-              >
-                {calculations.totalEligibleDays} days
-              </Text>
-            </View>
           </View>
         </View>
 
@@ -354,56 +300,24 @@ export default function LeaveConversionScreen() {
                 isDark ? "text-white" : "text-[#1A1D23]"
               } text-lg font-bold`}
             >
-              Monetary Value
+              Estimated Value
             </Text>
             <DollarSign color={isDark ? "#10B981" : "#059669"} size={20} />
           </View>
 
           <View className="mb-4">
-            <View
-              className={`flex-row justify-between py-3 border-b ${
-                isDark ? "border-gray-700" : "border-gray-200"
-              }`}
-            >
-              <Text className={`${isDark ? "text-gray-300" : "text-gray-600"}`}>
-                Gross Amount
-              </Text>
-              <Text
-                className={`${
-                  isDark ? "text-white" : "text-[#1A1D23]"
-                } font-medium`}
-              >
-                ${calculations.totalAmountBeforeTax.toFixed(2)}
-              </Text>
-            </View>
-
-            <View
-              className={`flex-row justify-between py-3 border-b ${
-                isDark ? "border-gray-700" : "border-gray-200"
-              }`}
-            >
-              <Text className={`${isDark ? "text-gray-300" : "text-gray-600"}`}>
-                Tax Deduction (Demo 15%)
-              </Text>
-              <Text
-                className={`${isDark ? "text-red-400" : "text-red-600"} font-medium`}
-              >
-                -${calculations.taxAmount.toFixed(2)}
-              </Text>
-            </View>
-
             <View className="flex-row justify-between py-3">
               <Text
                 className={`${isDark ? "text-white" : "text-[#1A1D23]"} font-bold`}
               >
-                Net Amount
+                Total Amount
               </Text>
               <Text
                 className={`${
                   isDark ? "text-white" : "text-[#1A1D23]"
                 } font-bold text-lg`}
               >
-                ${calculations.netAmount.toFixed(2)}
+                IDR {calculations.netAmount.toLocaleString('id-ID')}
               </Text>
             </View>
           </View>
@@ -419,71 +333,16 @@ export default function LeaveConversionScreen() {
                   isDark ? "text-green-200" : "text-green-800"
                 } font-medium`}
               >
-                Conversion Rate
+                Note
               </Text>
               <Text
                 className={`${
                   isDark ? "text-green-200" : "text-green-800"
                 } font-bold`}
               >
-                (Varies by leave type)
+                No tax deduction applied
               </Text>
             </View>
-          </View>
-        </View>
-
-        {/* Tax Info */}
-        <View
-          className={`${
-            isDark ? "bg-gray-800" : "bg-white"
-          } rounded-xl p-5 shadow-md mb-6`}
-        >
-          <View className="flex-row justify-between items-center mb-4">
-            <Text
-              className={`${
-                isDark ? "text-white" : "text-[#1A1D23]"
-              } text-lg font-bold`}
-            >
-              Tax Information
-            </Text>
-            <Calculator color={isDark ? "#9CA3AF" : "#6B7280"} size={20} />
-          </View>
-
-          <Text className={`${isDark ? "text-gray-300" : "text-gray-600"} mb-4`}>
-            The tax deduction is calculated based on your current tax bracket.
-            Unused leave days are treated as additional income.
-          </Text>
-
-          <Text
-            className={`${isDark ? "text-white" : "text-[#1A1D23]"} font-medium mb-3`}
-          >
-            Your Tax Bracket: 15% (Demo)
-          </Text>
-
-          <View
-            className={`${isDark ? "bg-gray-700" : "bg-gray-100"} rounded-lg p-4`}
-          >
-            <Text
-              className={`${
-                isDark ? "text-gray-300" : "text-gray-600"
-              } text-sm mb-2`}
-            >
-              Current Tax Brackets
-            </Text>
-            {taxBrackets.map((bracket, index) => (
-              <View key={`tax-${index}`} className="flex-row justify-between py-2">
-                <Text
-                  className={`${isDark ? "text-gray-400" : "text-gray-500"} text-sm`}
-                >
-                  {'$${bracket.min} - $${bracket.max}'}
-                </Text>
-                <Text
-                  className={`${isDark ? "text-gray-400" : "text-gray-500"} text-sm`}
-                >
-                  {bracket.rate}%
-                </Text>
-              </View>
-            ))}
           </View>
         </View>
 
@@ -496,7 +355,7 @@ export default function LeaveConversionScreen() {
           <Text
             className={`${isDark ? "text-white" : "text-[#1A1D23]"} text-lg font-bold mb-4`}
           >
-            Eligibility Criteria
+            Info
           </Text>
 
           <View className="space-y-3">
@@ -529,7 +388,7 @@ export default function LeaveConversionScreen() {
           activeOpacity={0.7} // ✅ Feedback visual
         >
           <Text className="text-white text-center font-bold text-lg">
-            {conversionRequested ? "Conversion Requested" : "Request Conversion"}
+            {conversionRequested ? "Request Sent" : "Request Conversion"}
           </Text>
         </TouchableOpacity>
       </ScrollView>

@@ -14,6 +14,7 @@ import { useAuth } from "@/context/AuthContext";
 
 type Notification = {
   id: number;
+  title: string; // Added title
   message: string;
   created_at: string;
   is_read: boolean;
@@ -108,13 +109,6 @@ export default function NotificationsScreen() {
     return date.toLocaleDateString();
   };
 
-  const getTitle = (message: string) => {
-    if (message.toLowerCase().includes("disetujui") || message.toLowerCase().includes("approved")) return "Leave Approved";
-    if (message.toLowerCase().includes("ditolak") || message.toLowerCase().includes("rejected")) return "Leave Rejected";
-    if (message.toLowerCase().includes("mengajukan")) return "New Request";
-    return "Notification";
-  };
-
   return (
     <SafeAreaView className="flex-1 bg-blue-50" edges={["top"]}>
       {/* Header */}
@@ -164,7 +158,7 @@ export default function NotificationsScreen() {
                 <View className="flex-1">
                   <View className="flex-row justify-between">
                     <Text className="font-bold text-gray-900">
-                      {getTitle(notification.message)}
+                      {notification.title || "Notification"}
                     </Text>
                     {!notification.is_read && (
                       <View className="bg-blue-500 w-2 h-2 rounded-full mt-2" />
