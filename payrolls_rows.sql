@@ -1,0 +1,1 @@
+INSERT INTO "public"."payrolls" ("id", "user_id", "period", "basic_salary", "allowances", "deductions", "encashment_amount", "net_salary", "status", "created_at") VALUES ('ab5502b1-cd01-42ab-8c2a-2934873a1ebe', 'ee024d80-7e6e-421f-8448-f9d634d28400', '2025-11-01', '5000000', '0', '0', '3571428', '3571428', 'paid', '2025-11-28 02:49:02.048816+00');
