@@ -31,10 +31,19 @@ export type LeaveRequest = {
   };
 };
 
+export type LeaveType = {
+  id: string;
+  name: string;
+  code: string;
+  is_quota_deduction: boolean;
+  badge_color?: string; // Optional as it might be null
+};
+
 export const useUserData = () => {
   const { user } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [history, setHistory] = useState<LeaveRequest[]>([]);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchUserData = useCallback(async () => {
@@ -74,6 +83,18 @@ export const useUserData = () => {
         setHistory(histData || []);
       }
 
+      // 3. Fetch Master Data: Leave Types
+      const { data: typesData, error: typesError } = await supabase
+        .from('leave_types')
+        .select('*')
+        .order('name');
+
+      if (typesError) {
+        console.error('Error fetching leave types:', typesError);
+      } else {
+        setLeaveTypes(typesData || []);
+      }
+
     } catch (err) {
       console.error('Unexpected error in useUserData:', err);
     } finally {
@@ -88,6 +109,7 @@ export const useUserData = () => {
   return {
     profile,
     history,
+    leaveTypes,
     loading,
     refetch: fetchUserData,
   };

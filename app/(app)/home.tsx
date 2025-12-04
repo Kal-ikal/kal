@@ -79,15 +79,10 @@ export default function DashboardScreen() {
   const setIsTabBarVisible = useTabBarStore((state) => state.setIsVisible);
 
   // Use the centralized hook
-  const { profile, history, refetch } = useUserData();
+  const { profile, history, leaveTypes, refetch } = useUserData();
 
   // Derived State
-  // Use "Cuti Tahunan" instead of Annual
-  const [leaveBalances, setLeaveBalances] = useState<LeaveBalanceUI[]>([
-    { type: "Cuti Tahunan", days: 12, used: 0, color: "#3B82F6" },
-    { type: "Sakit", days: 10, used: 0, color: "#10B981" },
-    { type: "Special", days: 5, used: 0, color: "#8B5CF6" },
-  ]);
+  const [leaveBalances, setLeaveBalances] = useState<LeaveBalanceUI[]>([]);
   const [monthlyUsageData, setMonthlyUsageData] = useState<{value: number, label: string}[]>([
       { value: 0, label: "Jan" },
       { value: 0, label: "Feb" },
@@ -97,9 +92,7 @@ export default function DashboardScreen() {
       { value: 0, label: "Jun" },
   ]);
   const [yearlyUsageData, setYearlyUsageData] = useState<{value: number, label: string}[]>([
-    { value: 0, label: "Cuti Tahunan" },
-    { value: 0, label: "Sakit" },
-    { value: 0, label: "Lainnya" },
+    // Will be populated dynamically
   ]);
   const [upcomingLeaves, setUpcomingLeaves] = useState<UpcomingLeaveUI[]>([]);
 
@@ -139,10 +132,7 @@ export default function DashboardScreen() {
 
   // Process data when hooks return data
   useEffect(() => {
-    if (profile) {
-      let annualUsed = 0;
-      let sickUsed = 0;
-      let specialUsed = 0;
+    if (profile && leaveTypes.length > 0) {
 
       const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
       const monthlyMap = new Map<string, number>();
@@ -153,14 +143,15 @@ export default function DashboardScreen() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
+      // Usage map per Leave Type ID
+      const usageMap = new Map<string, number>();
+      leaveTypes.forEach(lt => usageMap.set(lt.id, 0));
+
       history.forEach((req) => {
         const startDate = new Date(req.start_date);
         const endDate = new Date(req.end_date);
         const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
         const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-        // Correctly handle leave types by CODE from joined table
-        const code = (req.leave_types?.code || '').toUpperCase();
 
         // Use 'approved' instead of 'Disetujui'
         if (req.status === 'approved') {
@@ -169,26 +160,22 @@ export default function DashboardScreen() {
               monthlyMap.set(monthName, (monthlyMap.get(monthName) || 0) + days);
           }
 
-          if (code === 'CT') { // Cuti Tahunan
-              annualUsed += days;
-          } else if (code === 'SK') { // Sakit
-              sickUsed += days;
-          } else {
-              specialUsed += days;
-          }
+          // Add to usage
+          // req.leave_type (from DB) is the ID
+          const typeId = typeof req.leave_type === 'string' ? req.leave_type : (req.leave_type as any)?.id;
+          // Note: In supabase result, if leave_type is an object, it's joined. But if we selected '*', leave_type column is the FK ID.
+          // Wait, 'leave_requests' schema: leave_type is UUID.
+          // So usageMap key is UUID.
+          const existing = usageMap.get(req.leave_type as string) || 0;
+          usageMap.set(req.leave_type as string, existing + days);
         }
 
         if (req.status === 'approved' && startDate > today) {
-            let color = "#3B82F6";
-            let displayType = "Cuti Tahunan";
-
-            if (code === 'SK') {
-              color = "#10B981";
-              displayType = "Sakit";
-            } else if (code !== 'CT') {
-              color = "#8B5CF6";
-              displayType = req.leave_types?.name || 'Special';
-            }
+            let color = "#3B82F6"; // Default blue
+            if (req.leave_types?.badge_color === 'green') color = "#10B981";
+            else if (req.leave_types?.badge_color === 'red') color = "#EF4444";
+            else if (req.leave_types?.badge_color === 'purple') color = "#8B5CF6";
+            else if (req.leave_types?.badge_color === 'orange') color = "#F97316";
 
             const options: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short', year: 'numeric' };
             const startStr = startDate.toLocaleDateString('en-GB', options);
@@ -197,7 +184,7 @@ export default function DashboardScreen() {
 
             upcoming.push({
               id: req.id,
-              type: displayType,
+              type: req.leave_types?.name || "Leave",
               startDate: req.start_date,
               endDate: req.end_date,
               days,
@@ -207,14 +194,65 @@ export default function DashboardScreen() {
         }
       });
 
-      // Update State - use profile.leave_balance for Annual
-      const estimatedAlloc = (profile.leave_balance || 0) + annualUsed;
+      // Construct Cards dynamically from Leave Types
+      const newBalances: LeaveBalanceUI[] = leaveTypes.map(lt => {
+          const used = usageMap.get(lt.id) || 0;
 
-      setLeaveBalances([
-        { type: "Cuti Tahunan", days: estimatedAlloc, used: annualUsed, color: "#3B82F6" },
-        { type: "Sakit", days: 10 + sickUsed, used: sickUsed, color: "#10B981" }, // Mock allocation
-        { type: "Lainnya", days: 5 + specialUsed, used: specialUsed, color: "#8B5CF6" }, // Mock allocation
-      ]);
+          // Determine logic
+          let daysToDisplay = 0; // The large number
+
+          if (lt.is_quota_deduction) {
+              // Show REMAINING
+              // Logic: Profile Balance is remaining.
+              // So we display Profile Balance.
+              // UI shows "X used of Y days".
+              // So Total Y = Balance + Used.
+              daysToDisplay = (profile.leave_balance || 0) + used;
+          } else {
+              // Show USED (Limitless or Policy based)
+              // Just show "Used" count as the main number?
+              // The UI component does: <Text>{leave.days - leave.used}</Text>
+              // If we want to show "Used", we can hack it:
+              // If is_quota_deduction is false, let's treat "days" as total days in year (365) or just make it so used is shown.
+              // Current UI: {leave.days - leave.used} is the big number.
+              // If not quota deduction, maybe we show "Used" instead of "Remaining".
+              // But I should stick to the UI structure.
+              // Let's set days = used, and used = 0? -> Result: Used
+              // Or better: Let's assume a mock limit for UI niceness (e.g., 365) but label it "Unlimited"?
+              // The user said "Flexible".
+              // If not quota deduction, it often means unlimited or per-case.
+              // Let's set days = used (so remaining appears 0) but that looks bad.
+              // Let's modify the Loop to just set days = 0 and handle text rendering conditionally?
+              // No, let's keep it simple.
+              // If not deduction, we just show "Used: X".
+              // To make existing UI work:
+              //   Big Number = days - used.
+              //   If we want Big Number = Used, we set days = 2 * used, used = used? No.
+              //   Let's set days = used, used = 0. Big Number = Used.
+              //   Text below says "0 used of Used days" -> Weird.
+
+              // Standard approach:
+              // If no quota, set days = 999 (Unlimited).
+              daysToDisplay = 999;
+          }
+
+          let color = "#3B82F6";
+          if (lt.badge_color === 'green') color = "#10B981";
+          else if (lt.badge_color === 'red') color = "#EF4444";
+          else if (lt.badge_color === 'purple') color = "#8B5CF6";
+          else if (lt.badge_color === 'orange') color = "#F97316";
+
+          return {
+              type: lt.name,
+              days: daysToDisplay,
+              used: used,
+              color: color,
+              // Custom flag for UI rendering if I could modify the JSX logic below, but I will try to map to existing structure first.
+              isQuota: lt.is_quota_deduction
+          };
+      });
+
+      setLeaveBalances(newBalances);
 
       const mData = months.slice(0, 6).map(m => ({
           value: monthlyMap.get(m) || 0,
@@ -222,16 +260,18 @@ export default function DashboardScreen() {
       }));
       setMonthlyUsageData(mData);
 
-      setYearlyUsageData([
-          { value: annualUsed, label: "Cuti Tahunan" },
-          { value: sickUsed, label: "Sakit" },
-          { value: specialUsed, label: "Lainnya" }
-      ]);
+      // Top 3 most used types for Yearly Chart
+      const sortedUsage = leaveTypes
+          .map(lt => ({ label: lt.name, value: usageMap.get(lt.id) || 0 }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, 4); // Take top 4
+
+      setYearlyUsageData(sortedUsage.length > 0 ? sortedUsage : [{value:0, label:'-'}]);
 
       upcoming.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
       setUpcomingLeaves(upcoming.slice(0, 3));
     }
-  }, [profile, history]);
+  }, [profile, history, leaveTypes]);
 
   const quickActions: QuickAction[] = [
     {
@@ -361,23 +401,46 @@ export default function DashboardScreen() {
                   >
                     {leave.type}
                   </Text>
-                  <Text
-                    className={`${
-                      isDarkMode ? "text-white" : "text-[#1A1D23]"
-                    } text-2xl font-bold mt-1`}
-                  >
-                    {leave.days - leave.used}
-                  </Text>
-                  <Text className="text-gray-500 text-xs mt-2">
-                    {leave.used} used of {leave.days} days
-                  </Text>
+
+                  {/* Dynamic Rendering based on Quota/Non-Quota */}
+                  {(leave as any).isQuota ? (
+                      <>
+                        <Text
+                            className={`${
+                            isDarkMode ? "text-white" : "text-[#1A1D23]"
+                            } text-2xl font-bold mt-1`}
+                        >
+                            {leave.days - leave.used}
+                        </Text>
+                        <Text className="text-gray-500 text-xs mt-2">
+                            {leave.used} used of {leave.days} days
+                        </Text>
+                      </>
+                  ) : (
+                      <>
+                        <Text
+                            className={`${
+                            isDarkMode ? "text-white" : "text-[#1A1D23]"
+                            } text-2xl font-bold mt-1`}
+                        >
+                            {leave.used}
+                        </Text>
+                        <Text className="text-gray-500 text-xs mt-2">
+                            Days Used
+                        </Text>
+                      </>
+                  )}
+
                   <View className="mt-3">
                     <View className="h-2 bg-gray-200 rounded-full overflow-hidden">
                       <View
                         className="h-full rounded-full"
                         style={{
-                          width: `${(leave.used / Math.max(leave.days, 1)) * 100}%`,
+                          width: (leave as any).isQuota
+                            ? `${(leave.used / Math.max(leave.days, 1)) * 100}%`
+                            : '100%', // Full bar for non-quota types to indicate usage? Or maybe proportional to max reasonable? Let's just fill it.
                           backgroundColor: leave.color,
+                          opacity: (leave as any).isQuota ? 1 : 0.5
                         }}
                       />
                     </View>
