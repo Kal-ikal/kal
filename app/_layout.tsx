@@ -7,6 +7,8 @@ import { useCustomBackHandler } from '../hooks/useCustomBackHandler';
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { AuthProvider } from "../context/AuthContext";
 import { AuthGuard } from "../components/AuthGuard";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "../lib/react-query";
 import "./global.css";
 
 enableScreens(true);
@@ -66,11 +68,13 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <AuthProvider>
-          <ThemeProvider>
-            <RootLayoutNav />
-          </ThemeProvider>
-        </AuthProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <ThemeProvider>
+              <RootLayoutNav />
+            </ThemeProvider>
+          </AuthProvider>
+        </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
