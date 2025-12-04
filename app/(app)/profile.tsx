@@ -54,18 +54,18 @@ export default function ProfileScreen() {
   useScrollToTop(scrollRef);
 
   // Real Data
-  const { employee, history, loading} = useUserData();
+  const { profile, history, loading} = useUserData(); // Changed from employee to profile
 
   // State for modals
   const [showEditModal, setShowEditModal] = useState(false);
   const [avatar, setAvatar] = useState("https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=900&auto=format&fit=crop&q=60");
 
-  // Update avatar when employee data loads
+  // Update avatar when profile data loads
   useEffect(() => {
-    if (employee?.avatar_url) {
-      setAvatar(employee.avatar_url);
+    if (profile?.avatar_url) {
+      setAvatar(profile.avatar_url);
     }
-  }, [employee]);
+  }, [profile]);
 
   // Calculate years of service
   const getYearsOfService = (joinDate: string | undefined) => {
@@ -107,13 +107,22 @@ export default function ProfileScreen() {
     transform: [{ scale: withSpring(previewAnim.value ? 1 : 0.85) }],
   }));
 
-  if (loading && !employee) {
+  if (loading && !profile) {
     return (
         <View className={`flex-1 justify-center items-center ${isDarkMode ? "bg-gray-900" : "bg-gray-100"}`}>
             <ActivityIndicator size="large" color="#3B82F6" />
         </View>
     );
   }
+
+  // Need to handle missing fields in Profile vs Employee
+  // Employee had: phone_number, address, position
+  // Profile likely has similar or missing. Assuming UserProfile has them if they exist in DB.
+  // The UserProfile type in useUserData has: id, full_name, department, role, leave_balance, basic_salary, join_date, status, avatar_url, email
+  // It is missing: position, phone_number, address.
+  // I should check `useUserData.ts` definition again or just assume they might not be in Profile yet and use placeholders.
+  // Web Admin schema shows 'profiles' table. It might not have address/phone if not added.
+  // For now I will use placeholders if properties don't exist on type.
 
   return (
     <View className={`${isDarkMode ? "bg-gray-900" : "bg-gray-100"} flex-1`}>
@@ -175,10 +184,10 @@ export default function ProfileScreen() {
             </TouchableOpacity>
 
             <Text className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
-              {formatValue(employee?.full_name)}
+              {formatValue(profile?.full_name)}
             </Text>
             <Text className={`${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
-              {formatValue(employee?.position)}
+              {formatValue(profile?.role)}
             </Text>
           </View>
 
@@ -186,14 +195,14 @@ export default function ProfileScreen() {
           <View className="flex-row justify-around border-t pt-6" style={{ borderColor: isDarkMode ? "#374151" : "#E5E7EB" }}>
             <View className="items-center">
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
-                {getYearsOfService(employee?.join_date)}
+                {getYearsOfService(profile?.join_date)}
               </Text>
               <Text className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>Years</Text>
             </View>
 
             <View className="items-center">
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
-                {formatValue(employee?.department)}
+                {formatValue(profile?.department)}
               </Text>
               <Text className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>Department</Text>
             </View>
@@ -201,7 +210,7 @@ export default function ProfileScreen() {
             <View className="items-center">
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
                 {/* Formatting ID to be shorter or just showing it */}
-                {employee?.id ? employee.id.substring(0, 8) : "-"}
+                {profile?.id ? profile.id.substring(0, 8) : "-"}
               </Text>
               <Text className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>ID</Text>
             </View>
@@ -217,15 +226,16 @@ export default function ProfileScreen() {
               <Mail size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Email</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.email)}</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(profile?.email)}</Text>
               </View>
             </View>
 
+            {/* Note: Phone and Address might not be in Profiles table yet, hiding or showing placeholder */}
             <View className="flex-row items-center">
               <Phone size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Phone</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.phone_number)}</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>-</Text>
               </View>
             </View>
 
@@ -233,7 +243,7 @@ export default function ProfileScreen() {
               <MapPin size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Address</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.address)}</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>-</Text>
               </View>
             </View>
 
@@ -241,7 +251,7 @@ export default function ProfileScreen() {
               <Calendar size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Join Date</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.join_date)}</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(profile?.join_date)}</Text>
               </View>
             </View>
 
@@ -249,7 +259,7 @@ export default function ProfileScreen() {
               <Building size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Department</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.department)}</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(profile?.department)}</Text>
               </View>
             </View>
           </View>
@@ -268,12 +278,18 @@ export default function ProfileScreen() {
             {history.slice(0, 5).map((leave, index) => (
               <View key={leave.id} className={`flex-row justify-between items-center pb-4 ${index !== Math.min(history.length, 5) - 1 ? "border-b" : ""}`} style={{ borderColor: isDarkMode ? "#374151" : "#E5E7EB" }}>
                 <View>
-                  <Text className={`font-medium ${isDarkMode ? "text-white" : "text-gray-800"}`}>{leave.leave_type}</Text>
+                  <Text className={`font-medium ${isDarkMode ? "text-white" : "text-gray-800"}`}>
+                    {/* Display name from joined table or fallback */}
+                    {leave.leave_types?.name || "Cuti"}
+                  </Text>
                   <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>{leave.start_date} to {leave.end_date}</Text>
                 </View>
 
                 <View>
-                  <Text className={`px-3 py-1 rounded-full text-sm font-medium ${leave.status === "Disetujui" ? isDarkMode ? "bg-green-900 text-green-200" : "bg-green-100 text-green-800" : leave.status === "Dalam Proses" ? isDarkMode ? "bg-yellow-900 text-yellow-200" : "bg-yellow-100 text-yellow-800" : isDarkMode ? "bg-red-900 text-red-200" : "bg-red-100 text-red-800"}`}>{leave.status}</Text>
+                  <Text className={`px-3 py-1 rounded-full text-sm font-medium ${leave.status === "approved" ? isDarkMode ? "bg-green-900 text-green-200" : "bg-green-100 text-green-800" : leave.status === "pending" ? isDarkMode ? "bg-yellow-900 text-yellow-200" : "bg-yellow-100 text-yellow-800" : isDarkMode ? "bg-red-900 text-red-200" : "bg-red-100 text-red-800"}`}>
+                    {/* Map English status to Indo for badge */}
+                    {leave.status === 'approved' ? 'Disetujui' : leave.status === 'pending' ? 'Dalam Proses' : 'Ditolak'}
+                  </Text>
                 </View>
               </View>
             ))}

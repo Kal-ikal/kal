@@ -41,7 +41,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { isDarkMode, toggleTheme } = useTheme();
   const { signOut } = useAuth();
-  const { employee } = useUserData();
+  const { profile } = useUserData(); // Changed from employee to profile
   const { onScroll } = useScrollHandler();
 
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -54,12 +54,12 @@ export default function SettingsScreen() {
 
   // Data is now fetched via useUserData, but fallback to placeholders if loading/null
   const userData = {
-    name: employee?.full_name || "User",
-    email: employee?.email || "email@example.com",
-    phone: "Not Provided", // Not in Employee type currently
-    department: employee?.department || "General",
-    employeeId: employee?.id || "N/A",
-    joinDate: employee?.join_date || "N/A",
+    name: profile?.full_name || "User",
+    email: profile?.email || "email@example.com",
+    phone: "Not Provided", // Not in UserProfile type currently
+    department: profile?.department || "General",
+    employeeId: profile?.id || "N/A",
+    joinDate: profile?.join_date || "N/A",
   };
 
   const leavePolicy = [

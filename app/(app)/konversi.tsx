@@ -12,7 +12,6 @@ import {
   ChevronLeft,
   Info,
   DollarSign,
-  Calculator,
   CheckCircle,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -32,12 +31,6 @@ type LeaveBalance = {
   days: number;
   used: number;
   eligible: number;
-  rate: number;
-};
-
-type TaxBracket = {
-  min: number;
-  max: number | string;
   rate: number;
 };
 
@@ -68,8 +61,9 @@ export default function LeaveConversionScreen() {
     try {
       if (!profile) return;
 
-      // 1. Get Basic Salary from Profile (Web Admin uses salary / 21)
+      // 1. Get Basic Salary from Profile
       const salary = profile.basic_salary || 0;
+      // Note: We use dailyRate only for display per item, but the main calculation follows Admin Panel formula
       const dailyRate = Math.floor(salary / 21);
 
       // 2. Calculate Used Annual Leave from History
@@ -83,7 +77,6 @@ export default function LeaveConversionScreen() {
 
       if (requests) {
         requests.forEach((req: any) => {
-            // Updated to check joined CODE 'CT'
             const code = (req.leave_types?.code || '').toUpperCase();
             if (code === 'CT') {
                  const startDate = new Date(req.start_date);
@@ -124,18 +117,18 @@ export default function LeaveConversionScreen() {
       (sum, leave) => sum + leave.eligible,
       0
     );
-    const totalAmountBeforeTax = leaveBalances.reduce(
-      (sum, leave) => sum + leave.eligible * leave.rate,
-      0
-    );
+
+    // Formula from Admin Panel: Math.floor((salary / 21) * leaveBalance)
+    const salary = profile?.basic_salary || 0;
+    // We calculate total amount based on the SUM of eligible days for all types (though usually only one type is eligible)
+    // If there were multiple types, this formula applies to the total days.
+    const netAmount = Math.floor((salary / 21) * totalEligibleDays);
 
     return {
       totalEligibleDays,
-      totalAmountBeforeTax,
-      taxAmount: 0,
-      netAmount: totalAmountBeforeTax,
+      netAmount: netAmount,
     };
-  }, [leaveBalances]);
+  }, [leaveBalances, profile]);
 
   // ✅ Handler dengan useCallback
   const handleRequestConversion = useCallback(async () => {
@@ -155,8 +148,6 @@ export default function LeaveConversionScreen() {
             try {
                 if (!profile) throw new Error("Not authenticated");
 
-                // Find the ID for 'Cuti Tahunan' (CT) to attach to this request
-                // We use 'CT' because encashment usually deducts from Annual Leave quota.
                 const { data: typeData } = await supabase
                     .from('leave_types')
                     .select('id')
@@ -166,7 +157,6 @@ export default function LeaveConversionScreen() {
                 let typeId = typeData?.id;
 
                 if (!typeId) {
-                     // Fallback if 'CT' code not found
                      const { data: anyType } = await supabase.from('leave_types').select('id').limit(1).single();
                      typeId = anyType?.id;
                 }
@@ -176,7 +166,6 @@ export default function LeaveConversionScreen() {
                     leave_type: typeId,
                     start_date: new Date().toISOString(),
                     end_date: new Date().toISOString(),
-                    // Add explicit tag in reason for HR to identify
                     reason: `REQUEST ENCASHMENT: ${calculations.totalEligibleDays} days. Est: IDR ${calculations.netAmount}`,
                     status: 'pending',
                     current_stage: 'hrd',
@@ -344,7 +333,7 @@ export default function LeaveConversionScreen() {
                   isDark ? "text-green-200" : "text-green-800"
                 } font-bold`}
               >
-                No tax deduction applied
+                Based on basic salary
               </Text>
             </View>
           </View>
