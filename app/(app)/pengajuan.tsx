@@ -1,880 +1,538 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+// ===========================================================
+// 📱 FRONT-END EXPO
+// 📁 Lokasi: annualbenefit/app/(app)/pengajuan.tsx
+// 📝 Aksi: REPLACE file yang sudah ada
+// ✅ FIXED: Menggunakan RPC untuk submit leave request
+// ===========================================================
+
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
-  TextInput,
-  TouchableOpacity,
   ScrollView,
+  TouchableOpacity,
+  TextInput,
   Alert,
-  Platform,
-  BackHandler,
-  Keyboard,
   ActivityIndicator,
+  Platform,
 } from "react-native";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter } from "expo-router";
+import {
+  ArrowLeft,
+  Calendar,
+  FileText,
+  ChevronRight,
+  Check,
+  Upload,
+  AlertCircle,
+} from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
-import { LinearGradient } from "expo-linear-gradient";
-import { cssInterop } from "nativewind";
-import {
-  ChevronLeft,
-  ChevronRight,
-  Calendar,
-  Upload,
-  CheckCircle,
-  X,
-} from "lucide-react-native";
+import { useTheme } from "@/context/ThemeContext";
+import { useAuth } from "@/context/AuthContext";
+import { useUserData, useLeaveTypes } from "@/hooks/useUserData";
+import { submitLeaveRequest, calculateWorkingDays } from "@/services/leaveService";
+import { formatDateFullID } from "@/utils/formatters";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as DocumentPicker from "expo-document-picker";
-import { useTheme } from "@/context/ThemeContext";
-import { supabase } from '@/lib/supabase';
-import { useUserData } from '@/hooks/useUserData';
-import { useScrollHandler } from "@/hooks/useScrollHandler";
 
-cssInterop(LinearGradient, { className: "style" });
+type Step = 1 | 2 | 3;
 
-// ===========================
-// TYPE DEFINITIONS
-// ===========================
-type FormData = {
-  leaveType: string;
-  startDate: string;
-  endDate: string;
-  reason: string;
-  days: number;
-  documents: string[];
-};
-
-type LeaveType = {
-  id: string;
-  name: string;
-};
-
-// ===========================
-// CONSTANTS
-// ===========================
-const LEAVE_TYPES: LeaveType[] = [
-  { id: "Cuti Tahunan", name: "Annual Leave" },
-  { id: "Cuti Sakit", name: "Sick Leave" },
-  { id: "Cuti Darurat", name: "Emergency Leave" },
-  { id: "Cuti Melahirkan", name: "Maternity Leave" },
-  { id: "Cuti Lainnya", name: "Other Leave" },
-];
-
-const TOTAL_STEPS = 3;
-const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
-
-// ===========================
-// COMPONENT
-// ===========================
-export default function LeaveApplicationForm() {
-  // ===========================
-  // HOOKS
-  // ===========================
+export default function PengajuanScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { isDarkMode: isDark } = useTheme();
-  const { employee } = useUserData();
-  const { onScroll } = useScrollHandler();
+  const { isDarkMode } = useTheme();
+  const { session } = useAuth();
+  const { employee, refetch } = useUserData();
+  const { leaveTypes, loading: loadingTypes } = useLeaveTypes();
 
-  // ===========================
-  // STATE
-  // ===========================
-  const [currentStep, setCurrentStep] = useState(1);
-  const [formData, setFormData] = useState<FormData>({
-    leaveType: "",
-    startDate: "",
-    endDate: "",
-    reason: "",
-    days: 0,
-    documents: [],
-  });
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [datePickerField, setDatePickerField] = useState<"start" | "end">("start");
-  const [tempDate, setTempDate] = useState(new Date());
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Form state
+  const [step, setStep] = useState<Step>(1);
+  const [selectedLeaveTypeId, setSelectedLeaveTypeId] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState<Date>(new Date());
+  const [endDate, setEndDate] = useState<Date>(new Date());
+  const [reason, setReason] = useState("");
+  const [document, setDocument] = useState<any>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  // ===========================
-  // REFS
-  // ===========================
-  const scrollRef = useRef<ScrollView>(null);
+  // Date picker visibility
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
 
-  // ===========================
-  // EFFECTS
-  // ===========================
+  // Get selected leave type details
+  const selectedLeaveType = useMemo(() => {
+    return leaveTypes.find(lt => lt.id === selectedLeaveTypeId);
+  }, [leaveTypes, selectedLeaveTypeId]);
 
-  // Reset form saat screen fokus
-  useFocusEffect(
-    useCallback(() => {
+  // Calculate days
+  const [workingDays, setWorkingDays] = useState<number>(1);
+  const calculateDays = async () => {
+    const days = await calculateWorkingDays(
+      startDate.toISOString().split('T')[0],
+      endDate.toISOString().split('T')[0]
+    );
+    setWorkingDays(days);
+  };
 
-      setCurrentStep(1);
-      setFormData({
-        leaveType: "",
-        startDate: "",
-        endDate: "",
-        reason: "",
-        days: 0,
-        documents: [],
+  // Recalculate when dates change
+  React.useEffect(() => {
+    calculateDays();
+  }, [startDate, endDate]);
+
+  // Step validation
+  const canProceed = useMemo(() => {
+    switch (step) {
+      case 1:
+        return selectedLeaveTypeId !== null;
+      case 2:
+        return startDate <= endDate && reason.trim().length > 0;
+      case 3:
+        // If requires file, must have document
+        if (selectedLeaveType?.requires_file && !document) {
+          return false;
+        }
+        return true;
+      default:
+        return false;
+    }
+  }, [step, selectedLeaveTypeId, startDate, endDate, reason, document, selectedLeaveType]);
+
+  // Handle date change
+  const onStartDateChange = (event: any, date?: Date) => {
+    setShowStartPicker(Platform.OS === 'ios');
+    if (date) {
+      setStartDate(date);
+      if (date > endDate) {
+        setEndDate(date);
+      }
+    }
+  };
+
+  const onEndDateChange = (event: any, date?: Date) => {
+    setShowEndPicker(Platform.OS === 'ios');
+    if (date) {
+      setEndDate(date);
+    }
+  };
+
+  // Handle document pick
+  const pickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
       });
-      setErrors({});
-      setShowDatePicker(false);
-      scrollRef.current?.scrollTo({ y: 0, animated: false });
 
-      return () => {};
-    }, [])
-  );
+      if (!result.canceled && result.assets?.[0]) {
+        setDocument(result.assets[0]);
+      }
+    } catch (err) {
+      console.error('Document picker error:', err);
+    }
+  };
 
-  // Handle hardware back button
-  useFocusEffect(
-    useCallback(() => {
-      const onBackPress = () => {
-        Keyboard.dismiss();
+  // Submit handler - USING RPC
+  const handleSubmit = async () => {
+    if (!session?.user?.id || !selectedLeaveTypeId) {
+      Alert.alert('Error', 'Data tidak lengkap');
+      return;
+    }
 
-        if (currentStep > 1) {
-          setCurrentStep(currentStep - 1);
-          setTimeout(() => {
-            scrollRef.current?.scrollTo({ y: 0, animated: true });
-          }, 100);
-          return true;
-        }
+    try {
+      setSubmitting(true);
 
-        const hasData =
-          formData.leaveType ||
-          formData.startDate ||
-          formData.endDate ||
-          formData.reason ||
-          formData.documents.length > 0;
+      // ✅ MENGGUNAKAN RPC untuk submit
+      const result = await submitLeaveRequest({
+        userId: session.user.id,
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
+        reason: reason,
+        leaveTypeId: selectedLeaveTypeId,
+        documentUrl: document?.uri || undefined,
+      });
 
-        if (!hasData) {
-          router.back();
-          return true;
-        }
-
+      if (result.success) {
         Alert.alert(
-          "Cancel Leave Application?",
-          "Your progress will be lost. Are you sure?",
+          'Berhasil',
+          'Pengajuan cuti berhasil dikirim. Menunggu persetujuan.',
           [
-            { text: "Stay", style: "cancel" },
             {
-              text: "Yes, Cancel",
-              style: "destructive",
+              text: 'OK',
               onPress: () => {
+                refetch(); // Refresh data
                 router.back();
               },
             },
           ]
         );
-        return true;
-      };
-
-      const backHandler = BackHandler.addEventListener(
-        "hardwareBackPress",
-        onBackPress
-      );
-
-      return () => backHandler.remove();
-    }, [currentStep, formData, router])
-  );
-
-  // Calculate leave days
-  useEffect(() => {
-    if (formData.startDate && formData.endDate) {
-      const start = new Date(formData.startDate);
-      const end = new Date(formData.endDate);
-
-      if (start > end) {
-        setFormData((prev) => ({ ...prev, days: 0 }));
-        return;
-      }
-
-      const diffTime = Math.abs(end.getTime() - start.getTime());
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      setFormData((prev) => ({ ...prev, days: diffDays + 1 }));
-    } else {
-      setFormData((prev) => ({ ...prev, days: 0 }));
-    }
-  }, [formData.startDate, formData.endDate]);
-
-  // ===========================
-  // HANDLERS
-  // ===========================
-
-  const handleInputChange = useCallback(
-    (field: keyof FormData, value: string) => {
-      setFormData((prev) => ({ ...prev, [field]: value } as FormData));
-      
-      // Clear error for this field
-      setErrors((prev) => {
-        if (prev[field]) {
-          const newErrors = { ...prev };
-          delete newErrors[field];
-          return newErrors;
-        }
-        return prev;
-      });
-    },
-    []
-  );
-
-  const validateStep = useCallback((): boolean => {
-    const newErrors: Record<string, string> = {};
-
-    if (currentStep === 1 && !formData.leaveType) {
-      newErrors.leaveType = "Please select a leave type";
-    }
-
-    if (currentStep === 2) {
-      if (!formData.startDate) newErrors.startDate = "Start date is required";
-      if (!formData.endDate) newErrors.endDate = "End date is required";
-      if (formData.startDate && formData.endDate) {
-        const s = new Date(formData.startDate);
-        const e = new Date(formData.endDate);
-        if (e < s) newErrors.endDate = "End date cannot be before start date";
-      }
-    }
-
-    if (currentStep === 3 && !formData.reason.trim()) {
-      newErrors.reason = "Reason is required";
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  }, [currentStep, formData.leaveType, formData.startDate, formData.endDate, formData.reason]);
-
-  const formatDate = useCallback((dateString: string): string => {
-    if (!dateString) return "" as string;
-    const d = new Date(dateString);
-    return d.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  }, []);
-
-  const handleSubmit = useCallback(async () => {
-    const formattedStartDate = formatDate(formData.startDate);
-    const formattedEndDate = formatDate(formData.endDate);
-    const totalDays = formData.days;
-
-    if (!employee?.id) {
-      Alert.alert("Error", "User data not found. Please try reloading the app.");
-      return;
-    }
-
-    Alert.alert(
-      "Submit Leave Application?",
-      `You are applying for ${totalDays} days of leave from ${formattedStartDate} to ${formattedEndDate}`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Submit",
-          onPress: async () => {
-            try {
-              setIsSubmitting(true);
-
-              // 1. Insert into leave_requests
-              const { data: requestData, error: insertError } = await supabase
-                .from('leave_requests')
-                .insert({
-                  employee_id: employee.id,
-                  leave_type: formData.leaveType,
-                  start_date: formData.startDate,
-                  end_date: formData.endDate,
-                  reason: formData.reason,
-                  status: 'Dalam Proses', // Status awal
-                  current_step_order: 1, // Step awal
-                })
-                .select('id') // Retrieve the ID
-                .single();
-
-              if (insertError) throw insertError;
-              if (!requestData) throw new Error("Failed to retrieve new request ID");
-
-              const newRequestId = requestData.id;
-
-              // 2. Bulk Insert into approval_steps
-              // Fixed column names to match database schema
-              const approvalSteps = [
-                {
-                  leave_request_id: newRequestId,
-                  step_name: "Handover/Rekan Kerja",
-                  approver_role: "manager",
-                  step_order: 1,
-                  status: "Dalam Proses",
-                },
-                {
-                  leave_request_id: newRequestId,
-                  step_name: "DFD",
-                  approver_role: "dfd_lead",
-                  step_order: 2,
-                  status: "Dalam Proses",
-                },
-                {
-                  leave_request_id: newRequestId,
-                  step_name: "HRD",
-                  approver_role: "hrd",
-                  step_order: 3,
-                  status: "Dalam Proses",
-                },
-                {
-                  leave_request_id: newRequestId,
-                  step_name: "Admin Final",
-                  approver_role: "admin",
-                  step_order: 4,
-                  status: "Dalam Proses",
-                },
-              ];
-
-              const { error: stepsError } = await supabase
-                .from('approval_steps')
-                .insert(approvalSteps);
-
-              if (stepsError) {
-                console.error("Error inserting steps:", stepsError);
-                throw new Error("Failed to initialize approval workflow.");
-              }
-
-              Alert.alert(
-                "Application Submitted",
-                "Your leave application has been submitted successfully and is now pending approval.",
-                [
-                  {
-                    text: "OK",
-                    onPress: () => {
-                      router.replace("/(app)/home");
-                    },
-                  },
-                ]
-              );
-            } catch (error: any) {
-              console.error("Submit error:", error);
-              Alert.alert(
-                "Error",
-                error.message || "Failed to submit application. Please try again."
-              );
-            } finally {
-              setIsSubmitting(false);
-            }
-          },
-        },
-      ]
-    );
-  }, [formData, formatDate, router, employee]);
-
-  const handleNext = useCallback(() => {
-    Keyboard.dismiss();
-
-    if (validateStep()) {
-      if (currentStep < TOTAL_STEPS) {
-        setCurrentStep(currentStep + 1);
-        setTimeout(() => {
-          scrollRef.current?.scrollTo({ y: 0, animated: true });
-        }, 100);
       } else {
-        handleSubmit();
+        Alert.alert('Error', result.error || 'Gagal mengajukan cuti');
       }
+    } catch (err: any) {
+      console.error('Submit error:', err);
+      Alert.alert('Error', err.message || 'Terjadi kesalahan');
+    } finally {
+      setSubmitting(false);
     }
-  }, [currentStep, validateStep, handleSubmit]);
-
-  const handleSafeBack = useCallback(() => {
-    Keyboard.dismiss();
-
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
-      setTimeout(() => {
-        scrollRef.current?.scrollTo({ y: 0, animated: true });
-      }, 100);
-      return;
-    }
-
-    // Check if form has data
-    setFormData((currentFormData) => {
-      const hasData =
-        currentFormData.leaveType ||
-        currentFormData.startDate ||
-        currentFormData.endDate ||
-        currentFormData.reason ||
-        currentFormData.documents.length > 0;
-
-      if (!hasData) {
-        router.back();
-        return currentFormData;
-      }
-
-      // Confirm before leaving
-      Alert.alert(
-        "Cancel Leave Application?",
-        "Your progress will be lost. Are you sure?",
-        [
-          { text: "Stay", style: "cancel" },
-          {
-            text: "Yes, Cancel",
-            style: "destructive",
-            onPress: () => {
-              router.back();
-            },
-          },
-        ]
-      );
-      
-      return currentFormData;
-    });
-  }, [currentStep, router]);
-
-  const handlePrevious = useCallback(() => {
-    handleSafeBack();
-  }, [handleSafeBack]);
-
-  const showPicker = useCallback(
-    (field: "start" | "end") => {
-      Keyboard.dismiss();
-      setDatePickerField(field);
-      const fd: "startDate" | "endDate" =
-        field === "start" ? "startDate" : "endDate";
-      setTempDate(formData[fd] ? new Date(formData[fd]) : new Date());
-      setShowDatePicker(true);
-    },
-    [formData]
-  );
-
-  const onDateChange = useCallback(
-    (event: any, selectedDate?: Date) => {
-      if (Platform.OS === "android") setShowDatePicker(false);
-      if (event.type === "set" && selectedDate) {
-        const dateString = selectedDate.toISOString().split("T")[0];
-        const fieldName: keyof FormData =
-          datePickerField === "start" ? "startDate" : "endDate";
-        handleInputChange(fieldName, dateString);
-      }
-    },
-    [datePickerField, handleInputChange]
-  );
-
-  const handleDocumentUpload = useCallback(async () => {
-    try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: ["application/pdf", "image/jpeg", "image/png"],
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled) return;
-
-      if (result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        const name = asset.name ?? "document";
-
-        if (asset.size && asset.size > MAX_FILE_SIZE) {
-          Alert.alert("File too large", "File must be under 2MB");
-          return;
-        }
-
-        setFormData((p) => ({ ...p, documents: [...p.documents, name] }));
-      }
-    } catch (error) {
-      console.error("Error picking document:", error);
-      Alert.alert("Error", "Could not pick document.");
-    }
-  }, []);
-
-  // ===========================
-  // COMPUTED VALUES
-  // ===========================
-
-  const minimumDate = useMemo(() => {
-    if (datePickerField === "end" && formData.startDate) {
-      return new Date(formData.startDate);
-    }
-    return new Date();
-  }, [datePickerField, formData.startDate]);
-
-  // ===========================
-  // RENDER FUNCTIONS
-  // ===========================
-
-  const renderStepOne = useMemo(
-    () => (
-      <View className="space-y-6">
-        <Text
-          className={`text-lg font-bold ${
-            isDark ? "text-white" : "text-gray-800"
-          }`}
-        >
-          Select Leave Type
-        </Text>
-        {LEAVE_TYPES.map((type) => (
-          <TouchableOpacity
-            key={type.id}
-            className={`p-4 rounded-xl border ${
-              formData.leaveType === type.id
-                ? "bg-blue-50 border-blue-500 dark:bg-blue-900/30 dark:border-blue-400"
-                : `${
-                    isDark
-                      ? "bg-gray-800 border-gray-700"
-                      : "bg-white border-gray-200"
-                  }`
-            }`}
-            onPress={() => handleInputChange("leaveType", type.id)}
-            activeOpacity={0.7}
-          >
-            <Text
-              className={`text-base ${
-                formData.leaveType === type.id
-                  ? "text-blue-600 dark:text-blue-300 font-semibold"
-                  : isDark
-                    ? "text-gray-300"
-                    : "text-gray-700"
-              }`}
-            >
-              {type.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-        {errors.leaveType ? (
-          <Text className="text-red-500 text-sm">{errors.leaveType}</Text>
-        ) : null}
-      </View>
-    ),
-    [formData.leaveType, errors.leaveType, isDark, handleInputChange]
-  );
-
-  const renderStepTwo = useMemo(
-    () => (
-      <View className="space-y-6">
-        <Text
-          className={`text-lg font-bold ${
-            isDark ? "text-white" : "text-gray-800"
-          }`}
-        >
-          Select Date Range
-        </Text>
-
-        {/* START DATE */}
-        <View>
-          <Text className={`mb-2 ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-            Start Date
-          </Text>
-          <TouchableOpacity
-            onPress={() => showPicker("start")}
-            className={`flex-row items-center border rounded-xl p-3 ${
-              isDark
-                ? "bg-gray-800 border-gray-700"
-                : "bg-white border-gray-300"
-            }`}
-            activeOpacity={0.7}
-          >
-            <Calendar size={20} color="#3B82F6" />
-            <Text
-              className={`ml-3 ${isDark ? "text-gray-300" : "text-gray-700"}`}
-            >
-              {formData.startDate
-                ? formatDate(formData.startDate)
-                : "Select start date"}
-            </Text>
-          </TouchableOpacity>
-          {errors.startDate ? (
-            <Text className="text-red-500 text-sm mt-1">
-              {errors.startDate}
-            </Text>
-          ) : null}
-        </View>
-
-        {/* END DATE */}
-        <View>
-          <Text className={`mb-2 ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-            End Date
-          </Text>
-          <TouchableOpacity
-            onPress={() => showPicker("end")}
-            className={`flex-row items-center border rounded-xl p-3 ${
-              isDark
-                ? "bg-gray-800 border-gray-700"
-                : "bg-white border-gray-300"
-            }`}
-            activeOpacity={0.7}
-          >
-            <Calendar size={20} color="#3B82F6" />
-            <Text
-              className={`ml-3 ${isDark ? "text-gray-300" : "text-gray-700"}`}
-            >
-              {formData.endDate
-                ? formatDate(formData.endDate)
-                : "Select end date"}
-            </Text>
-          </TouchableOpacity>
-          {errors.endDate ? (
-            <Text className="text-red-500 text-sm mt-1">{errors.endDate}</Text>
-          ) : null}
-        </View>
-
-        <View
-          className={`rounded-xl p-4 ${
-            isDark ? "bg-blue-900/30" : "bg-blue-50"
-          }`}
-        >
-          <Text
-            className={`text-base font-semibold ${
-              isDark ? "text-blue-300" : "text-blue-800"
-            }`}
-          >
-            Total Leave Days: {formData.days}
-          </Text>
-        </View>
-      </View>
-    ),
-    [
-      formData.startDate,
-      formData.endDate,
-      formData.days,
-      errors.startDate,
-      errors.endDate,
-      isDark,
-      showPicker,
-      formatDate,
-    ]
-  );
-
-  const renderStepThree = useMemo(
-    () => (
-      <View className="space-y-6">
-        <Text
-          className={`text-lg font-bold ${
-            isDark ? "text-white" : "text-gray-800"
-          }`}
-        >
-          Application Details
-        </Text>
-
-        <View>
-          <Text className={`mb-2 ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-            Reason for Leave
-          </Text>
-          <TextInput
-            multiline
-            textAlignVertical="top"
-            className={`border rounded-xl p-4 h-32 ${
-              isDark
-                ? "bg-gray-800 border-gray-700 text-white"
-                : "bg-white border-gray-300 text-gray-700"
-            }`}
-            placeholder="Write your reason..."
-            placeholderTextColor={isDark ? "#9CA3AF" : "#6B7280"}
-            value={formData.reason}
-            onChangeText={(v) => handleInputChange("reason", v)}
-            maxLength={500}
-          />
-          {errors.reason ? (
-            <Text className="text-red-500 text-sm mt-1">{errors.reason}</Text>
-          ) : null}
-        </View>
-
-        <View>
-          <Text className={`mb-2 ${isDark ? "text-gray-300" : "text-gray-700"}`}>
-            Supporting Documents (Optional, Max 2MB)
-          </Text>
-          <TouchableOpacity
-            className={`flex-row items-center justify-center border-2 border-dashed rounded-xl p-6 ${
-              isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-300"
-            }`}
-            onPress={handleDocumentUpload}
-            activeOpacity={0.7}
-          >
-            <Upload size={24} color="#3B82F6" />
-            <Text className="ml-2 text-blue-600 font-medium">
-              Upload Document
-            </Text>
-          </TouchableOpacity>
-
-          {formData.documents.length > 0 && (
-            <View className="mt-3">
-              <Text
-                className={`text-sm mb-2 ${
-                  isDark ? "text-gray-400" : "text-gray-600"
-                }`}
-              >
-                Uploaded Documents:
-              </Text>
-              {formData.documents.map((doc, i) => (
-                <View
-                  key={`doc-${i}`}
-                  className={`flex-row items-center rounded-lg p-3 mb-2 ${
-                    isDark ? "bg-gray-700" : "bg-gray-100"
-                  }`}
-                >
-                  <CheckCircle size={16} color="#10B981" />
-                  <Text
-                    className={`ml-2 flex-1 ${
-                      isDark ? "text-gray-300" : "text-gray-700"
-                    }`}
-                    numberOfLines={1}
-                  >
-                    {doc}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-        </View>
-      </View>
-    ),
-    [
-      formData.reason,
-      formData.documents,
-      errors.reason,
-      isDark,
-      handleInputChange,
-      handleDocumentUpload,
-    ]
-  );
-
-  const renderCurrentStep = () => {
-    if (currentStep === 1) return renderStepOne;
-    if (currentStep === 2) return renderStepTwo;
-    return renderStepThree;
   };
 
-  // ===========================
-  // JSX RENDER
-  // ===========================
+  // Render step content
+  const renderStepContent = () => {
+    switch (step) {
+      case 1:
+        return renderStep1();
+      case 2:
+        return renderStep2();
+      case 3:
+        return renderStep3();
+    }
+  };
+
+  // Step 1: Select Leave Type
+  const renderStep1 = () => (
+    <View className="px-6 py-4">
+      <Text className={`text-lg font-bold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+        Pilih Jenis Cuti
+      </Text>
+
+      {loadingTypes ? (
+        <ActivityIndicator size="large" color="#3B82F6" />
+      ) : (
+        leaveTypes.map((type) => (
+          <TouchableOpacity
+            key={type.id}
+            className={`p-4 rounded-xl mb-3 border-2 ${
+              selectedLeaveTypeId === type.id
+                ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20"
+                : isDarkMode
+                ? "border-gray-700 bg-gray-800"
+                : "border-gray-200 bg-white"
+            }`}
+            onPress={() => setSelectedLeaveTypeId(type.id)}
+          >
+            <View className="flex-row items-center justify-between">
+              <View className="flex-row items-center flex-1">
+                <View
+                  className="w-3 h-3 rounded-full mr-3"
+                  style={{ backgroundColor: type.badge_color || '#3B82F6' }}
+                />
+                <View className="flex-1">
+                  <Text
+                    className={`font-semibold ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                  >
+                    {type.name}
+                  </Text>
+                  <View className="flex-row mt-1">
+                    {type.is_quota_deduction && (
+                      <View className="bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5 rounded mr-2">
+                        <Text className="text-yellow-700 dark:text-yellow-300 text-xs">
+                          Potong Saldo
+                        </Text>
+                      </View>
+                    )}
+                    {type.requires_file && (
+                      <View className="bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded">
+                        <Text className="text-red-700 dark:text-red-300 text-xs">
+                          Butuh Dokumen
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+              {selectedLeaveTypeId === type.id && (
+                <Check color="#3B82F6" size={24} />
+              )}
+            </View>
+          </TouchableOpacity>
+        ))
+      )}
+    </View>
+  );
+
+  // Step 2: Date and Reason
+  const renderStep2 = () => (
+    <View className="px-6 py-4">
+      <Text className={`text-lg font-bold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+        Tanggal & Alasan
+      </Text>
+
+      {/* Start Date */}
+      <View className="mb-4">
+        <Text className={`text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+          Tanggal Mulai
+        </Text>
+        <TouchableOpacity
+          className={`p-4 rounded-xl flex-row items-center justify-between ${
+            isDarkMode ? "bg-gray-800" : "bg-white"
+          }`}
+          onPress={() => setShowStartPicker(true)}
+        >
+          <View className="flex-row items-center">
+            <Calendar color="#3B82F6" size={20} />
+            <Text className={`ml-3 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              {formatDateFullID(startDate.toISOString())}
+            </Text>
+          </View>
+          <ChevronRight color="#9CA3AF" size={20} />
+        </TouchableOpacity>
+        {showStartPicker && (
+          <DateTimePicker
+            value={startDate}
+            mode="date"
+            minimumDate={new Date()}
+            onChange={onStartDateChange}
+          />
+        )}
+      </View>
+
+      {/* End Date */}
+      <View className="mb-4">
+        <Text className={`text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+          Tanggal Selesai
+        </Text>
+        <TouchableOpacity
+          className={`p-4 rounded-xl flex-row items-center justify-between ${
+            isDarkMode ? "bg-gray-800" : "bg-white"
+          }`}
+          onPress={() => setShowEndPicker(true)}
+        >
+          <View className="flex-row items-center">
+            <Calendar color="#3B82F6" size={20} />
+            <Text className={`ml-3 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              {formatDateFullID(endDate.toISOString())}
+            </Text>
+          </View>
+          <ChevronRight color="#9CA3AF" size={20} />
+        </TouchableOpacity>
+        {showEndPicker && (
+          <DateTimePicker
+            value={endDate}
+            mode="date"
+            minimumDate={startDate}
+            onChange={onEndDateChange}
+          />
+        )}
+      </View>
+
+      {/* Duration Info */}
+      <View className={`p-4 rounded-xl mb-4 ${isDarkMode ? "bg-blue-900/20" : "bg-blue-50"}`}>
+        <Text className={`text-center font-semibold ${isDarkMode ? "text-blue-200" : "text-blue-800"}`}>
+          Durasi: {workingDays} hari kerja
+        </Text>
+      </View>
+
+      {/* Reason */}
+      <View className="mb-4">
+        <Text className={`text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+          Alasan
+        </Text>
+        <TextInput
+          className={`p-4 rounded-xl ${
+            isDarkMode ? "bg-gray-800 text-white" : "bg-white text-gray-900"
+          }`}
+          placeholder="Masukkan alasan cuti..."
+          placeholderTextColor="#9CA3AF"
+          value={reason}
+          onChangeText={setReason}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+        />
+      </View>
+    </View>
+  );
+
+  // Step 3: Review & Submit
+  const renderStep3 = () => (
+    <View className="px-6 py-4">
+      <Text className={`text-lg font-bold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+        Konfirmasi Pengajuan
+      </Text>
+
+      {/* Summary Card */}
+      <View className={`p-4 rounded-xl mb-4 ${isDarkMode ? "bg-gray-800" : "bg-white"}`}>
+        <View className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
+          <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            Jenis Cuti
+          </Text>
+          <Text className={`text-lg font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            {selectedLeaveType?.name}
+          </Text>
+        </View>
+
+        <View className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
+          <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            Tanggal
+          </Text>
+          <Text className={`font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            {formatDateFullID(startDate.toISOString())} - {formatDateFullID(endDate.toISOString())}
+          </Text>
+          <Text className={`text-sm ${isDarkMode ? "text-blue-300" : "text-blue-600"}`}>
+            {workingDays} hari kerja
+          </Text>
+        </View>
+
+        <View className="mb-3 pb-3 border-b border-gray-200 dark:border-gray-700">
+          <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            Alasan
+          </Text>
+          <Text className={`${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            {reason}
+          </Text>
+        </View>
+
+        {/* Document Upload */}
+        {selectedLeaveType?.requires_file && (
+          <View>
+            <Text className={`text-sm mb-2 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+              Dokumen Pendukung
+            </Text>
+            <TouchableOpacity
+              className={`p-4 rounded-xl border-2 border-dashed flex-row items-center justify-center ${
+                document
+                  ? "border-green-500 bg-green-50 dark:bg-green-900/20"
+                  : "border-gray-300 dark:border-gray-600"
+              }`}
+              onPress={pickDocument}
+            >
+              {document ? (
+                <>
+                  <Check color="#10B981" size={20} />
+                  <Text className="text-green-600 dark:text-green-400 ml-2">
+                    {document.name}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Upload color="#9CA3AF" size={20} />
+                  <Text className={`ml-2 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                    Upload Dokumen
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Warning if quota deduction */}
+        {selectedLeaveType?.is_quota_deduction && (
+          <View className="mt-4 p-3 rounded-lg bg-yellow-100 dark:bg-yellow-900/20 flex-row items-center">
+            <AlertCircle color="#F59E0B" size={20} />
+            <Text className="text-yellow-700 dark:text-yellow-300 ml-2 flex-1 text-sm">
+              Cuti ini akan memotong saldo cuti Anda sebanyak {workingDays} hari
+            </Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
 
   return (
-    <View className={`flex-1 ${isDark ? "bg-gray-900" : "bg-gray-50"}`}>
-      <StatusBar style="light" />
+    <View className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}>
+      <StatusBar style={isDarkMode ? "light" : "dark"} />
 
       {/* Header */}
-      <LinearGradient
-        colors={isDark ? ["#1E3A8A", "#1E40AF"] : ["#3B82F6", "#60A5FA"]}
-        className="px-6 pb-6 rounded-b-3xl"
-        style={{ paddingTop: insets.top + 24 }}
+      <View
+        className={`px-6 pb-4 border-b ${
+          isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"
+        }`}
+        style={{ paddingTop: insets.top + 16 }}
       >
         <View className="flex-row items-center justify-between">
-          <View className="flex-row items-center flex-1">
-            <TouchableOpacity
-              onPress={handleSafeBack}
-              className="mr-4 p-1"
-              activeOpacity={0.7}
-            >
-              <ChevronLeft color="white" size={24} />
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={() => router.back()} className="mr-4 p-2 -ml-2">
+              <ArrowLeft color={isDarkMode ? "#fff" : "#000"} size={24} />
             </TouchableOpacity>
-            <View>
-              <Text className="text-white text-xl font-bold">
-                Leave Application
-              </Text>
-              <Text className="text-blue-100 text-sm mt-1">
-                Step {currentStep} of {TOTAL_STEPS}
-              </Text>
-            </View>
+            <Text
+              className={`text-2xl font-bold ${
+                isDarkMode ? "text-white" : "text-gray-900"
+              }`}
+            >
+              Ajukan Cuti
+            </Text>
           </View>
-
-          <TouchableOpacity
-            onPress={handleSafeBack}
-            className="p-1"
-            activeOpacity={0.7}
-          >
-            <X color="white" size={24} />
-          </TouchableOpacity>
+          <Text className={`${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+            {step}/3
+          </Text>
         </View>
-      </LinearGradient>
 
-      {/* Progress Bar */}
-      <View className={`h-1 ${isDark ? "bg-gray-700" : "bg-gray-200"}`}>
-        <View
-          className="h-1 bg-blue-500 rounded-r"
-          style={{ width: `${(currentStep / TOTAL_STEPS) * 100}%` }}
-        />
+        {/* Progress Bar */}
+        <View className="flex-row mt-4">
+          {[1, 2, 3].map((s) => (
+            <View
+              key={s}
+              className={`flex-1 h-1 rounded-full mx-1 ${
+                s <= step ? "bg-blue-500" : isDarkMode ? "bg-gray-700" : "bg-gray-200"
+              }`}
+            />
+          ))}
+        </View>
       </View>
 
       {/* Content */}
-      <ScrollView
-        ref={scrollRef}
-        className="flex-1"
-        contentContainerStyle={{ paddingBottom: 100, minHeight: "101%" }}
-        keyboardShouldPersistTaps="handled"
-        onScroll={onScroll}
-        scrollEventThrottle={16}
-      >
-        <View className="p-4">
-          <View
-            className={`rounded-2xl p-5 shadow-sm ${
-              isDark ? "bg-gray-800" : "bg-white"
-            }`}
-          >
-            {renderCurrentStep()}
-          </View>
-        </View>
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        {renderStepContent()}
       </ScrollView>
 
       {/* Footer Buttons */}
       <View
-        className={`flex-row justify-between p-4 border-t ${
-          isDark ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+        className={`px-6 py-4 border-t ${
+          isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"
         }`}
         style={{ paddingBottom: insets.bottom + 16 }}
       >
-        <TouchableOpacity
-          onPress={handlePrevious}
-          disabled={currentStep === 1}
-          className={`flex-row items-center px-5 py-3 rounded-xl ${
-            currentStep === 1
-              ? isDark
-                ? "bg-gray-700"
-                : "bg-gray-100"
-              : isDark
-                ? "bg-gray-600"
-                : "bg-gray-200"
-          }`}
-          activeOpacity={0.7}
-        >
-          <ChevronLeft
-            size={20}
-            color={
-              currentStep === 1 ? "#9CA3AF" : isDark ? "#FFFFFF" : "#1F2937"
-            }
-          />
-          <Text
-            className={`ml-1 font-medium ${
-              currentStep === 1
-                ? isDark
-                  ? "text-gray-500"
-                  : "text-gray-500"
-                : isDark
-                  ? "text-white"
-                  : "text-gray-800"
-            }`}
-          >
-            Back
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          onPress={handleNext}
-          disabled={isSubmitting}
-          className={`flex-row items-center px-5 py-3 bg-blue-500 rounded-xl ${isSubmitting ? 'opacity-50' : ''}`}
-          activeOpacity={0.7}
-        >
-           {isSubmitting ? (
-             <ActivityIndicator size="small" color="#FFFFFF" />
-           ) : (
-            <>
-              <Text className="font-medium text-white">
-                {currentStep === TOTAL_STEPS ? "Submit" : "Next"}
+        <View className="flex-row">
+          {step > 1 && (
+            <TouchableOpacity
+              className={`flex-1 py-4 rounded-xl mr-2 ${
+                isDarkMode ? "bg-gray-800" : "bg-gray-200"
+              }`}
+              onPress={() => setStep((step - 1) as Step)}
+            >
+              <Text
+                className={`text-center font-semibold ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                Kembali
               </Text>
-              <ChevronRight size={20} color="#FFFFFF" />
-            </>
-           )}
-        </TouchableOpacity>
-      </View>
+            </TouchableOpacity>
+          )}
 
-      {/* Date Picker */}
-      {showDatePicker && (
-        <DateTimePicker
-          value={tempDate}
-          mode="date"
-          display={Platform.OS === "ios" ? "spinner" : "default"}
-          onChange={onDateChange}
-          minimumDate={minimumDate}
-        />
-      )}
+          <TouchableOpacity
+            className={`flex-1 py-4 rounded-xl ${
+              canProceed
+                ? "bg-blue-500"
+                : isDarkMode
+                ? "bg-gray-700"
+                : "bg-gray-300"
+            }`}
+            onPress={() => {
+              if (step < 3) {
+                setStep((step + 1) as Step);
+              } else {
+                handleSubmit();
+              }
+            }}
+            disabled={!canProceed || submitting}
+          >
+            {submitting ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <Text
+                className={`text-center font-semibold ${
+                  canProceed ? "text-white" : isDarkMode ? "text-gray-500" : "text-gray-500"
+                }`}
+              >
+                {step === 3 ? "Kirim Pengajuan" : "Lanjutkan"}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
 }

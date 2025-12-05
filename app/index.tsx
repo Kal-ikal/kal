@@ -3,7 +3,6 @@ import { View, Text, Image, TouchableOpacity, ScrollView, RefreshControl, StyleS
 // Hapus useSmartNavigation karena kita akan pakai router langsung untuk login
 import { useCustomBackHandler } from '../hooks/useCustomBackHandler';
 import { Calendar, BarChart2, Users, Shield, Plus } from "lucide-react-native";
-// PERUBAHAN 1: Hapus SafeAreaView, Import useSafeAreaInsets
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 // Tambahkan useRouter
@@ -90,7 +89,6 @@ const LandingScreen: React.FC = () => {
   };
 
   return (
-    // PERUBAHAN 3: Ganti SafeAreaView dengan View biasa dan terapkan padding dari insets
     <View 
       style={[
         styles.container, 
@@ -98,7 +96,6 @@ const LandingScreen: React.FC = () => {
           paddingTop: insets.top,
           paddingLeft: insets.left,
           paddingRight: insets.right,
-          // Kita tidak perlu padding bottom di sini karena ScrollView akan mengurus kontennya
         }
       ]}
     >

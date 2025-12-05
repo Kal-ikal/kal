@@ -1,3 +1,9 @@
+// ===========================================================
+// 📱 FRONT-END EXPO
+// 📁 Lokasi: annualbenefit/app/(app)/profile.tsx
+// 📝 Aksi: REPLACE file yang sudah ada
+// ===========================================================
+
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -18,6 +24,7 @@ import {
   Building,
   ChevronLeft,
   X,
+  Briefcase,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { cssInterop } from "nativewind";
@@ -34,6 +41,7 @@ import Animated, {
 import { useUserData } from "@/hooks/useUserData";
 import { useScrollHandler } from "@/hooks/useScrollHandler";
 import { useScrollToTop } from "@react-navigation/native";
+import { formatDateID, getStatusLabel, getStatusColor } from "@/utils/formatters";
 
 cssInterop(LinearGradient, { className: "style" });
 
@@ -43,20 +51,29 @@ const formatValue = (value: string | number | null | undefined) => {
   return String(value);
 };
 
+// ✅ PERUBAHAN: Mapping role ke label yang lebih readable
+const getRoleLabel = (role: string | undefined) => {
+  switch (role) {
+    case 'employee': return 'Karyawan';
+    case 'manager': return 'Manager';
+    case 'dfd': return 'DFD';
+    case 'hrd': return 'HRD';
+    default: return role || '-';
+  }
+};
+
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isDarkMode } = useTheme();
   const { onScroll } = useScrollHandler();
 
-  // Scroll Ref for Persistent Scroll & Scroll-To-Top
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
 
-  // Real Data
-  const { employee, history, loading} = useUserData();
+  // ✅ PERUBAHAN: Pakai hook baru
+  const { employee, history, loading } = useUserData();
 
-  // State for modals
   const [showEditModal, setShowEditModal] = useState(false);
   const [avatar, setAvatar] = useState("https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=900&auto=format&fit=crop&q=60");
 
@@ -89,18 +106,14 @@ export default function ProfileScreen() {
     }
   }, [showFullImage, previewAnim]);
 
-  const openFullImage = () => {
-    setShowFullImage(true);
-  };
+  const openFullImage = () => setShowFullImage(true);
 
   const closeFullImage = () => {
     previewAnim.value = withTiming(0, { duration: 200 });
     setTimeout(() => setShowFullImage(false), 200);
   };
 
-  const bgStyle = useAnimatedStyle(() => ({
-    opacity: previewAnim.value,
-  }));
+  const bgStyle = useAnimatedStyle(() => ({ opacity: previewAnim.value }));
 
   const imgStyle = useAnimatedStyle(() => ({
     opacity: previewAnim.value,
@@ -109,9 +122,9 @@ export default function ProfileScreen() {
 
   if (loading && !employee) {
     return (
-        <View className={`flex-1 justify-center items-center ${isDarkMode ? "bg-gray-900" : "bg-gray-100"}`}>
-            <ActivityIndicator size="large" color="#3B82F6" />
-        </View>
+      <View className={`flex-1 justify-center items-center ${isDarkMode ? "bg-gray-900" : "bg-gray-100"}`}>
+        <ActivityIndicator size="large" color="#3B82F6" />
+      </View>
     );
   }
 
@@ -145,19 +158,16 @@ export default function ProfileScreen() {
         ref={scrollRef}
         className="flex-1 px-4 mt-6"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }} // Added padding for tab bar
+        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
         onScroll={onScroll}
         scrollEventThrottle={16}
       >
         {/* Profile Block */}
-        <View
-          className={`${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-2xl p-6 mb-6 shadow-md`}
-        >
+        <View className={`${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-2xl p-6 mb-6 shadow-md`}>
           <View className="flex-row items-center justify-between mb-6">
             <Text className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
               My Profile
             </Text>
-
             <TouchableOpacity
               className={`${isDarkMode ? "bg-blue-600" : "bg-blue-500"} rounded-full p-3`}
               onPress={() => setShowEditModal(true)}
@@ -177,8 +187,9 @@ export default function ProfileScreen() {
             <Text className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
               {formatValue(employee?.full_name)}
             </Text>
+            {/* ✅ PERUBAHAN: Tampilkan role bukan position */}
             <Text className={`${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
-              {formatValue(employee?.position)}
+              {getRoleLabel(employee?.role)}
             </Text>
           </View>
 
@@ -188,29 +199,30 @@ export default function ProfileScreen() {
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
                 {getYearsOfService(employee?.join_date)}
               </Text>
-              <Text className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>Years</Text>
+              <Text className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>Tahun</Text>
             </View>
 
             <View className="items-center">
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
-                {formatValue(employee?.department)}
+                {formatValue(employee?.leave_balance)}
               </Text>
-              <Text className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>Department</Text>
+              <Text className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>Sisa Cuti</Text>
             </View>
 
             <View className="items-center">
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
-                {/* Formatting ID to be shorter or just showing it */}
-                {employee?.id ? employee.id.substring(0, 8) : "-"}
+                {employee?.status === 'active' ? 'Aktif' : 'Nonaktif'}
               </Text>
-              <Text className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>ID</Text>
+              <Text className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>Status</Text>
             </View>
           </View>
         </View>
 
         {/* Personal Info */}
         <View className={`${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-2xl p-6 mb-6 shadow-md`}>
-          <Text className={`text-lg font-bold mb-4 ${isDarkMode ? "text-white" : "text-gray-800"}`}>Personal Information</Text>
+          <Text className={`text-lg font-bold mb-4 ${isDarkMode ? "text-white" : "text-gray-800"}`}>
+            Informasi Personal
+          </Text>
 
           <View className="space-y-4">
             <View className="flex-row items-center">
@@ -224,32 +236,35 @@ export default function ProfileScreen() {
             <View className="flex-row items-center">
               <Phone size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
-                <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Phone</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.phone_number)}</Text>
-              </View>
-            </View>
-
-            <View className="flex-row items-center">
-              <MapPin size={20} color="#3B82F6" style={{ marginRight: 12 }} />
-              <View>
-                <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Address</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.address)}</Text>
-              </View>
-            </View>
-
-            <View className="flex-row items-center">
-              <Calendar size={20} color="#3B82F6" style={{ marginRight: 12 }} />
-              <View>
-                <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Join Date</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.join_date)}</Text>
+                <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Telepon</Text>
+                {/* ✅ PERUBAHAN: Pakai phone bukan phone_number */}
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.phone)}</Text>
               </View>
             </View>
 
             <View className="flex-row items-center">
               <Building size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
-                <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Department</Text>
+                <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Departemen</Text>
                 <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.department)}</Text>
+              </View>
+            </View>
+
+            <View className="flex-row items-center">
+              <Briefcase size={20} color="#3B82F6" style={{ marginRight: 12 }} />
+              <View>
+                <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Role</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{getRoleLabel(employee?.role)}</Text>
+              </View>
+            </View>
+
+            <View className="flex-row items-center">
+              <Calendar size={20} color="#3B82F6" style={{ marginRight: 12 }} />
+              <View>
+                <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Tanggal Bergabung</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>
+                  {employee?.join_date ? formatDateID(employee.join_date) : '-'}
+                </Text>
               </View>
             </View>
           </View>
@@ -258,27 +273,51 @@ export default function ProfileScreen() {
         {/* Leave History */}
         <View className={`${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-2xl p-6 shadow-md`}>
           <View className="flex-row items-center justify-between mb-4">
-            <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>Leave History</Text>
+            <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
+              Riwayat Cuti
+            </Text>
             <TouchableOpacity onPress={() => router.push('/(modals)/leave-history')}>
-              <Text className="text-blue-500 font-medium">View All</Text>
+              <Text className="text-blue-500 font-medium">Lihat Semua</Text>
             </TouchableOpacity>
           </View>
 
           <View className="space-y-4">
-            {history.slice(0, 5).map((leave, index) => (
-              <View key={leave.id} className={`flex-row justify-between items-center pb-4 ${index !== Math.min(history.length, 5) - 1 ? "border-b" : ""}`} style={{ borderColor: isDarkMode ? "#374151" : "#E5E7EB" }}>
-                <View>
-                  <Text className={`font-medium ${isDarkMode ? "text-white" : "text-gray-800"}`}>{leave.leave_type}</Text>
-                  <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>{leave.start_date} to {leave.end_date}</Text>
-                </View>
+            {history.slice(0, 5).map((leave, index) => {
+              // ✅ PERUBAHAN: Ambil nama leave type dari relasi
+              const leaveTypeName = leave.leave_types?.name || 'Cuti';
+              const statusLabel = getStatusLabel(leave.status);
+              const statusColors = getStatusColor(leave.status);
 
-                <View>
-                  <Text className={`px-3 py-1 rounded-full text-sm font-medium ${leave.status === "Disetujui" ? isDarkMode ? "bg-green-900 text-green-200" : "bg-green-100 text-green-800" : leave.status === "Dalam Proses" ? isDarkMode ? "bg-yellow-900 text-yellow-200" : "bg-yellow-100 text-yellow-800" : isDarkMode ? "bg-red-900 text-red-200" : "bg-red-100 text-red-800"}`}>{leave.status}</Text>
+              return (
+                <View 
+                  key={leave.id} 
+                  className={`flex-row justify-between items-center pb-4 ${index !== Math.min(history.length, 5) - 1 ? "border-b" : ""}`} 
+                  style={{ borderColor: isDarkMode ? "#374151" : "#E5E7EB" }}
+                >
+                  <View>
+                    <Text className={`font-medium ${isDarkMode ? "text-white" : "text-gray-800"}`}>
+                      {leaveTypeName}
+                    </Text>
+                    <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                      {formatDateID(leave.start_date)} - {formatDateID(leave.end_date)}
+                    </Text>
+                  </View>
+
+                  <View 
+                    className="px-3 py-1 rounded-full"
+                    style={{ backgroundColor: statusColors.bg }}
+                  >
+                    <Text className="text-xs font-medium" style={{ color: statusColors.text }}>
+                      {statusLabel}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
             {history.length === 0 && (
-                <Text className={`text-center py-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>No leave history found</Text>
+              <Text className={`text-center py-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                Belum ada riwayat cuti
+              </Text>
             )}
           </View>
         </View>
@@ -298,33 +337,20 @@ export default function ProfileScreen() {
       {/* === FULL IMAGE PREVIEW MODAL === */}
       {showFullImage && (
         <View style={StyleSheet.absoluteFillObject}>
-          {/* BLUR BACKDROP */}
           <Animated.View style={[StyleSheet.absoluteFillObject, bgStyle]} />
           <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={closeFullImage} />
 
-          {/* CLOSE BUTTON */}
           <TouchableOpacity
             onPress={closeFullImage}
-            style={{
-              position: "absolute",
-              top: insets.top + 20,
-              right: 20,
-              zIndex: 20,
-            }}
+            style={{ position: "absolute", top: insets.top + 20, right: 20, zIndex: 20 }}
           >
             <X size={32} color={isDarkMode ? "white" : "black"} />
           </TouchableOpacity>
 
-          {/* IMAGE PREVIEW */}
           <Animated.View style={[imgStyle, { alignSelf: "center", justifyContent: "center", alignItems: "center", flex: 1 }]}>
             <Image
               source={{ uri: avatar }}
-              style={{
-                width: "95%",
-                height: "75%",
-                resizeMode: "contain",
-                borderRadius: 20,
-              }}
+              style={{ width: "95%", height: "75%", resizeMode: "contain", borderRadius: 20 }}
             />
           </Animated.View>
         </View>

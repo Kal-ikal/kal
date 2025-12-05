@@ -1,187 +1,358 @@
-import React, { useState, useEffect, useCallback } from "react";
+// ===========================================================
+// 📱 FRONT-END EXPO
+// 📁 Lokasi: annualbenefit/app/(modals)/notifications.tsx
+// 📝 Aksi: REPLACE file yang sudah ada (dari hardcoded ke real data)
+// ✅ NEW: Menggunakan data dari Supabase dengan realtime subscription
+// ===========================================================
+
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
+  RefreshControl,
   ActivityIndicator,
 } from "react-native";
-import { X, Bell, Calendar } from "lucide-react-native";
 import { useRouter } from "expo-router";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  ArrowLeft,
+  Bell,
+  CheckCircle,
+  XCircle,
+  Clock,
+  AlertCircle,
+  Check,
+  Trash2,
+} from "lucide-react-native";
+import { BlurView } from "expo-blur";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
+import { formatRelativeTime } from "@/utils/formatters";
+import type { Notification } from "@/types/database";
 
-type Notification = {
-  id: number;
-  message: string;
-  created_at: string;
-  is_read: boolean;
-  link_to?: string;
-};
+interface NotificationItem extends Notification {
+  icon: 'success' | 'error' | 'pending' | 'info';
+}
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { user } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const insets = useSafeAreaInsets();
+  const { isDarkMode } = useTheme();
+  const { session } = useAuth();
+
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
+  // Fetch notifications from Supabase
   const fetchNotifications = useCallback(async () => {
-    if (!user) return;
+    if (!session?.user?.id) return;
+
     try {
-      setLoading(true);
       const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+        .from('notifications')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching notifications:', error);
+        return;
+      }
 
-      setNotifications(data || []);
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
+      // Transform notifications with icon type
+      const transformed: NotificationItem[] = (data || []).map(notif => ({
+        ...notif,
+        icon: getIconType(notif.title, notif.message),
+      }));
+
+      setNotifications(transformed);
+    } catch (err) {
+      console.error('Unexpected error:', err);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [session?.user?.id]);
 
+  // Determine icon type based on title/message content
+  const getIconType = (title: string, message: string): 'success' | 'error' | 'pending' | 'info' => {
+    const content = `${title} ${message}`.toLowerCase();
+    
+    if (content.includes('disetujui') || content.includes('approved') || content.includes('✅')) {
+      return 'success';
+    }
+    if (content.includes('ditolak') || content.includes('rejected') || content.includes('❌')) {
+      return 'error';
+    }
+    if (content.includes('pending') || content.includes('menunggu') || content.includes('proses')) {
+      return 'pending';
+    }
+    return 'info';
+  };
+
+  // Get icon component based on type
+  const getIcon = (type: 'success' | 'error' | 'pending' | 'info') => {
+    switch (type) {
+      case 'success':
+        return <CheckCircle color="#10B981" size={24} />;
+      case 'error':
+        return <XCircle color="#EF4444" size={24} />;
+      case 'pending':
+        return <Clock color="#F59E0B" size={24} />;
+      default:
+        return <AlertCircle color="#3B82F6" size={24} />;
+    }
+  };
+
+  // Get icon background color
+  const getIconBgColor = (type: 'success' | 'error' | 'pending' | 'info') => {
+    switch (type) {
+      case 'success':
+        return isDarkMode ? 'bg-green-900/30' : 'bg-green-100';
+      case 'error':
+        return isDarkMode ? 'bg-red-900/30' : 'bg-red-100';
+      case 'pending':
+        return isDarkMode ? 'bg-yellow-900/30' : 'bg-yellow-100';
+      default:
+        return isDarkMode ? 'bg-blue-900/30' : 'bg-blue-100';
+    }
+  };
+
+  // Initial fetch
   useEffect(() => {
     fetchNotifications();
   }, [fetchNotifications]);
 
-  const markAsRead = async (id: number) => {
-    // Optimistic update
-    setNotifications(
-      notifications.map((notif) =>
-        notif.id === id ? { ...notif, is_read: true } : notif
+  // Setup realtime subscription
+  useEffect(() => {
+    if (!session?.user?.id) return;
+
+    const channel = supabase
+      .channel('notifications-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        (payload) => {
+          console.log('Notification change:', payload);
+          // Refetch on any change
+          fetchNotifications();
+        }
       )
-    );
+      .subscribe();
 
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session?.user?.id, fetchNotifications]);
+
+  // Refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchNotifications();
+    setRefreshing(false);
+  }, [fetchNotifications]);
+
+  // Mark single notification as read
+  const markAsRead = async (id: string) => {
     try {
-      const { error } = await supabase
-        .from("notifications")
+      await supabase
+        .from('notifications')
         .update({ is_read: true })
-        .eq("id", id);
+        .eq('id', id);
 
-      if (error) console.error("Error marking read:", error);
-    } catch (e) {
-      console.error(e);
+      setNotifications(prev =>
+        prev.map(n => (n.id === id ? { ...n, is_read: true } : n))
+      );
+    } catch (err) {
+      console.error('Error marking as read:', err);
     }
   };
 
+  // Mark all as read
   const markAllAsRead = async () => {
-    setNotifications(notifications.map((notif) => ({ ...notif, is_read: true })));
-    if (!user) return;
+    if (!session?.user?.id) return;
 
     try {
       await supabase
-        .from("notifications")
+        .from('notifications')
         .update({ is_read: true })
-        .eq("user_id", user.id);
-    } catch (e) {
-      console.error(e);
+        .eq('user_id', session.user.id)
+        .eq('is_read', false);
+
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    } catch (err) {
+      console.error('Error marking all as read:', err);
     }
   };
 
-  const clearAll = async () => {
-    setNotifications([]);
-    if (!user) return;
+  // Delete notification
+  const deleteNotification = async (id: string) => {
     try {
       await supabase
-        .from("notifications")
+        .from('notifications')
         .delete()
-        .eq("user_id", user.id);
-    } catch (e) {
-      console.error(e);
+        .eq('id', id);
+
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    } catch (err) {
+      console.error('Error deleting notification:', err);
     }
   };
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = (now.getTime() - date.getTime()) / 1000; // seconds
-
-    if (diff < 60) return "Just now";
-    if (diff < 3600) return `${Math.floor(diff / 60)} mins ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} hours ago`;
-    return date.toLocaleDateString();
-  };
-
-  const getTitle = (message: string) => {
-    if (message.toLowerCase().includes("disetujui") || message.toLowerCase().includes("approved")) return "Leave Approved";
-    if (message.toLowerCase().includes("ditolak") || message.toLowerCase().includes("rejected")) return "Leave Rejected";
-    if (message.toLowerCase().includes("mengajukan")) return "New Request";
-    return "Notification";
-  };
+  // Count unread
+  const unreadCount = notifications.filter(n => !n.is_read).length;
 
   return (
-    <SafeAreaView className="flex-1 bg-blue-50" edges={["top"]}>
+    <View className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}>
+      <StatusBar style={isDarkMode ? "light" : "dark"} />
+
       {/* Header */}
-      <View className="flex-row justify-between items-center px-6 py-4 bg-white border-b border-gray-200">
-        <Text className="text-2xl font-bold text-gray-900">Notifications</Text>
-        <TouchableOpacity onPress={() => router.back()}>
-          <X color="#6B7280" size={24} />
-        </TouchableOpacity>
+      <View
+        className={`px-6 pb-4 border-b ${
+          isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"
+        }`}
+        style={{ paddingTop: insets.top + 16 }}
+      >
+        <View className="flex-row items-center justify-between">
+          <View className="flex-row items-center">
+            <TouchableOpacity onPress={() => router.back()} className="mr-4 p-2 -ml-2">
+              <ArrowLeft color={isDarkMode ? "#fff" : "#000"} size={24} />
+            </TouchableOpacity>
+            <View className="flex-row items-center">
+              <Text
+                className={`text-2xl font-bold ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                Notifikasi
+              </Text>
+              {unreadCount > 0 && (
+                <View className="bg-red-500 rounded-full px-2 py-0.5 ml-2">
+                  <Text className="text-white text-xs font-bold">{unreadCount}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {unreadCount > 0 && (
+            <TouchableOpacity
+              onPress={markAllAsRead}
+              className="flex-row items-center"
+            >
+              <Check color="#3B82F6" size={16} />
+              <Text className="text-blue-500 text-sm ml-1">Tandai Semua</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      {/* Controls */}
-      <View className="flex-row justify-between items-center px-6 py-3 bg-white">
-        <TouchableOpacity onPress={markAllAsRead}>
-          <Text className="text-blue-500 font-medium">Mark all as read</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={clearAll}>
-          <Text className="text-red-500 font-medium">Clear all</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Notifications List */}
-      <ScrollView className="flex-1 px-4 pt-4">
+      {/* Content */}
+      <ScrollView
+        className="flex-1 px-6 py-4"
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+      >
         {loading ? (
-           <View className="py-20">
-             <ActivityIndicator size="large" color="#3B82F6" />
-           </View>
+          <View className="py-20 items-center">
+            <ActivityIndicator size="large" color="#3B82F6" />
+          </View>
         ) : notifications.length === 0 ? (
-          <View className="flex-1 justify-center items-center py-20">
+          <View className="py-20 items-center">
             <Bell color="#9CA3AF" size={48} />
-            <Text className="text-gray-500 mt-4 text-center">
-              No notifications yet
+            <Text
+              className={`mt-4 text-center ${
+                isDarkMode ? "text-gray-400" : "text-gray-500"
+              }`}
+            >
+              Tidak ada notifikasi
             </Text>
           </View>
         ) : (
-          notifications.map((notification) => (
+          notifications.map((notif) => (
             <TouchableOpacity
-              key={notification.id}
-              className={`${
-                notification.is_read ? "bg-white" : "bg-blue-100"
-              } rounded-xl p-4 mb-3 shadow-sm border border-gray-200`}
-              onPress={() => markAsRead(notification.id)}
+              key={notif.id}
+              className={`rounded-xl p-4 mb-3 ${
+                notif.is_read
+                  ? isDarkMode
+                    ? "bg-gray-800"
+                    : "bg-white"
+                  : isDarkMode
+                  ? "bg-gray-800 border-l-4 border-blue-500"
+                  : "bg-blue-50 border-l-4 border-blue-500"
+              }`}
+              onPress={() => {
+                if (!notif.is_read) markAsRead(notif.id);
+                // Navigate to detail if needed
+                // router.push({ pathname: '/(modals)/notification-detail', params: { id: notif.id } });
+              }}
+              activeOpacity={0.7}
             >
               <View className="flex-row">
-                <View className="p-3 rounded-full bg-blue-100 mr-3">
-                  <Calendar color="#3B82F6" size={20} />
+                <View
+                  className={`w-12 h-12 rounded-full items-center justify-center mr-4 ${getIconBgColor(
+                    notif.icon
+                  )}`}
+                >
+                  {getIcon(notif.icon)}
                 </View>
+
                 <View className="flex-1">
-                  <View className="flex-row justify-between">
-                    <Text className="font-bold text-gray-900">
-                      {getTitle(notification.message)}
+                  <View className="flex-row items-start justify-between mb-1">
+                    <Text
+                      className={`font-semibold flex-1 mr-2 ${
+                        isDarkMode ? "text-white" : "text-gray-900"
+                      }`}
+                    >
+                      {notif.title}
                     </Text>
-                    {!notification.is_read && (
-                      <View className="bg-blue-500 w-2 h-2 rounded-full mt-2" />
-                    )}
+                    <TouchableOpacity
+                      onPress={() => deleteNotification(notif.id)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Trash2 color="#9CA3AF" size={16} />
+                    </TouchableOpacity>
                   </View>
-                  <Text className="text-gray-600 mt-1">
-                    {notification.message}
+
+                  <Text
+                    className={`text-sm mb-2 ${
+                      isDarkMode ? "text-gray-300" : "text-gray-600"
+                    }`}
+                    numberOfLines={2}
+                  >
+                    {notif.message}
                   </Text>
-                  <Text className="text-gray-400 text-xs mt-2">
-                    {formatTime(notification.created_at)}
+
+                  <Text
+                    className={`text-xs ${
+                      isDarkMode ? "text-gray-500" : "text-gray-400"
+                    }`}
+                  >
+                    {formatRelativeTime(notif.created_at)}
                   </Text>
                 </View>
               </View>
+
+              {/* Unread indicator dot */}
+              {!notif.is_read && (
+                <View className="absolute top-4 right-4 w-2 h-2 bg-blue-500 rounded-full" />
+              )}
             </TouchableOpacity>
           ))
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

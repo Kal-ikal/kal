@@ -1,602 +1,453 @@
-// app/(app)/home.tsx
-import React, { useState, useCallback, useEffect, useRef } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  Switch,
-  Dimensions,
-  RefreshControl,
-  TouchableOpacity,
-} from "react-native";
-import { BarChart, LineChart } from "react-native-gifted-charts";
-import {
-  Calendar,
-  TrendingUp,
-  TrendingDown,
-  Sun,
-  Moon,
-  FileText,
-  DollarSign,
-  User,
-  Settings,
-  Bell,
-} from "lucide-react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { cssInterop } from "nativewind";
-import { useRouter, useFocusEffect, Link } from "expo-router";
+// ===========================================================
+// 📱 FRONT-END EXPO
+// 📁 Lokasi: annualbenefit/app/(app)/home.tsx
+// 📝 Aksi: REPLACE file yang sudah ada
+// ✅ FIXED: Removed unused vars, fixed route types
+// ===========================================================
+
+import { View, Text, ScrollView, TouchableOpacity, RefreshControl } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
+import { 
+  Briefcase, 
+  TrendingUp, 
+  Clock, 
+  ChevronRight,
+  Bell,
+  Plus,
+  Sun,
+  Moon,
+  Wallet
+} from "lucide-react-native";
 import { useTheme } from "@/context/ThemeContext";
+import { LinearGradient } from "expo-linear-gradient";
+import { useCallback, useState, useMemo } from "react";
 import { useUserData } from "@/hooks/useUserData";
-import { useTabBarStore } from "@/hooks/useTabBarStore";
-import { useScrollHandler } from "@/hooks/useScrollHandler";
-import { useScrollToTop } from "@react-navigation/native";
+import { formatDateID, calculateDays } from "@/utils/formatters";
 
-cssInterop(LinearGradient, { className: "style" });
-cssInterop(Switch, { className: false });
-
-const screenWidth = Dimensions.get("window").width;
-
-type LeaveBalanceUI = {
-  type: string;
-  days: number;
-  used: number;
-  color: string;
-};
-
-type UpcomingLeaveUI = {
-  id: string;
-  type: string;
-  startDate: string;
-  endDate: string;
-  days: number;
-  color: string;
-  dateString: string;
-};
-
-type QuickAction = {
-  id: number;
-  title: string;
-  icon: React.JSX.Element;
-  link: "/pengajuan" | "/konversi" | "/profile" | "/settings";
-  useLink: boolean;
-};
-
-export default function DashboardScreen() {
+export default function HomeScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isDarkMode, toggleTheme } = useTheme();
-  const [switchReady, setSwitchReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const router = useRouter();
 
-  // Scroll Ref for Persistent Scroll & Scroll-To-Top
-  const scrollRef = useRef<ScrollView>(null);
-  useScrollToTop(scrollRef);
+  // ✅ Fetch data dari hook - removed 'loading' since not used in UI
+  const { 
+    employee, 
+    history, 
+    refetch,
+    getLeaveBalanceUI 
+  } = useUserData();
 
-  // Auto-Hide Tab Bar Logic using Shared Hook
-  const { onScroll } = useScrollHandler();
-  const setIsTabBarVisible = useTabBarStore((state) => state.setIsVisible);
-
-  // Use the centralized hook
-  const { employee, balances, history, refetch } = useUserData();
-
-  // Derived State
-  const [leaveBalances, setLeaveBalances] = useState<LeaveBalanceUI[]>([
-    { type: "Annual", days: 12, used: 0, color: "#3B82F6" },
-    { type: "Sick", days: 10, used: 0, color: "#10B981" },
-    { type: "Special", days: 5, used: 0, color: "#8B5CF6" },
-  ]);
-  const [monthlyUsageData, setMonthlyUsageData] = useState<{value: number, label: string}[]>([
-      { value: 0, label: "Jan" },
-      { value: 0, label: "Feb" },
-      { value: 0, label: "Mar" },
-      { value: 0, label: "Apr" },
-      { value: 0, label: "May" },
-      { value: 0, label: "Jun" },
-  ]);
-  const [yearlyUsageData, setYearlyUsageData] = useState<{value: number, label: string}[]>([
-    { value: 0, label: "Annual" },
-    { value: 0, label: "Sick" },
-    { value: 0, label: "Special" },
-  ]);
-  const [upcomingLeaves, setUpcomingLeaves] = useState<UpcomingLeaveUI[]>([]);
-
-  // Refresh Handler
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await refetch();
     setRefreshing(false);
   }, [refetch]);
 
-  // Prefetch routes
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      router.prefetch("/pengajuan");
-      setTimeout(() => {
-        router.prefetch("/profile");
-        router.prefetch("/konversi");
-      }, 1500);
-      setTimeout(() => {
-        router.prefetch("/settings");
-      }, 3000);
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, [router]);
+  // ✅ Gunakan getLeaveBalanceUI untuk data saldo
+  const balanceUI = useMemo(() => getLeaveBalanceUI(), [getLeaveBalanceUI]);
 
-  useFocusEffect(
-    useCallback(() => {
-      const t = setTimeout(() => setSwitchReady(true), 50);
-      // Ensure Tab Bar is visible when returning to Home
-      setIsTabBarVisible(true);
-      return () => {
-        setSwitchReady(false);
-        clearTimeout(t);
-      };
-    }, [setIsTabBarVisible])
-  );
+  // Get current greeting based on time
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Selamat Pagi";
+    if (hour < 15) return "Selamat Siang";
+    if (hour < 18) return "Selamat Sore";
+    return "Selamat Malam";
+  };
 
-  // Process data when hooks return data
-  useEffect(() => {
-    if (employee) {
-      let annualUsed = 0;
-      let sickUsed = 0;
-      let specialUsed = 0;
+  // ✅ Calculate stats from history with correct status check
+  const stats = useMemo(() => {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
 
-      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      const monthlyMap = new Map<string, number>();
-      months.forEach(m => monthlyMap.set(m, 0));
+    // Filter approved requests - check both 'approved' and 'Disetujui' for backward compatibility
+    const approvedRequests = history.filter(req => {
+      const status = req.status?.toLowerCase();
+      return status === 'approved' || status === 'disetujui';
+    });
 
-      const currentYear = new Date().getFullYear();
-      const upcoming: UpcomingLeaveUI[] = [];
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+    // Calculate days used this month
+    const thisMonthRequests = approvedRequests.filter(req => {
+      const startDate = new Date(req.start_date);
+      return startDate.getMonth() === currentMonth && startDate.getFullYear() === currentYear;
+    });
 
-      history.forEach((req) => {
+    const daysUsedThisMonth = thisMonthRequests.reduce((sum, req) => {
+      return sum + calculateDays(req.start_date, req.end_date);
+    }, 0);
+
+    // Calculate total days used this year
+    const thisYearRequests = approvedRequests.filter(req => {
+      const startDate = new Date(req.start_date);
+      return startDate.getFullYear() === currentYear;
+    });
+
+    const daysUsedThisYear = thisYearRequests.reduce((sum, req) => {
+      return sum + calculateDays(req.start_date, req.end_date);
+    }, 0);
+
+    // Pending requests count
+    const pendingCount = history.filter(req => {
+      const status = req.status?.toLowerCase();
+      return status === 'pending';
+    }).length;
+
+    return {
+      thisMonth: daysUsedThisMonth,
+      thisYear: daysUsedThisYear,
+      pending: pendingCount,
+    };
+  }, [history]);
+
+  // ✅ Upcoming leaves with correct status check
+  const upcomingLeaves = useMemo(() => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+
+    return history
+      .filter(req => {
+        const status = req.status?.toLowerCase();
+        const isApproved = status === 'approved' || status === 'disetujui';
         const startDate = new Date(req.start_date);
-        const endDate = new Date(req.end_date);
-        const diffTime = Math.abs(endDate.getTime() - startDate.getTime());
-        const days = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-
-        if (req.status === 'Disetujui') {
-          if (startDate.getFullYear() === currentYear) {
-              const monthName = months[startDate.getMonth()];
-              monthlyMap.set(monthName, (monthlyMap.get(monthName) || 0) + days);
-          }
-          const typeLower = req.leave_type.toLowerCase();
-          if (typeLower.includes('tahunan') || typeLower.includes('annual')) {
-              annualUsed += days;
-          } else if (typeLower.includes('sakit') || typeLower.includes('sick')) {
-              sickUsed += days;
-          } else {
-              specialUsed += days;
-          }
-        }
-
-        if (req.status === 'Disetujui' && startDate > today) {
-            let color = "#3B82F6";
-            let displayType = "Annual Leave";
-
-            const typeLower = req.leave_type.toLowerCase();
-            if (typeLower.includes('sakit') || typeLower.includes('sick')) {
-              color = "#10B981";
-              displayType = "Sick Leave";
-            } else if (!typeLower.includes('tahunan') && !typeLower.includes('annual')) {
-              color = "#8B5CF6";
-              displayType = req.leave_type;
-            }
-
-            const options: Intl.DateTimeFormatOptions = { day: '2-digit', month: 'short', year: 'numeric' };
-            const startStr = startDate.toLocaleDateString('en-GB', options);
-            const endStr = endDate.toLocaleDateString('en-GB', options);
-            const dateString = days > 1 ? `${startStr} - ${endStr} • ${days} days` : `${startStr} • 1 day`;
-
-            upcoming.push({
-              id: req.id,
-              type: displayType,
-              startDate: req.start_date,
-              endDate: req.end_date,
-              days,
-              color,
-              dateString
-            });
-        }
-      });
-
-      // Update State
-      const annualAlloc = balances.find(b => b.leave_type === 'Annual' || b.leave_type === 'Cuti Tahunan')?.total_allocation || 12;
-
-      setLeaveBalances([
-        { type: "Annual", days: annualAlloc, used: annualUsed, color: "#3B82F6" },
-        { type: "Sick", days: 10, used: sickUsed, color: "#10B981" },
-        { type: "Special", days: 5, used: specialUsed, color: "#8B5CF6" },
-      ]);
-
-      const mData = months.slice(0, 6).map(m => ({
-          value: monthlyMap.get(m) || 0,
-          label: m
+        startDate.setHours(0, 0, 0, 0);
+        return isApproved && startDate >= now;
+      })
+      .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
+      .slice(0, 3)
+      .map(req => ({
+        id: req.id,
+        type: req.leave_types?.name || 'Cuti',
+        startDate: req.start_date,
+        endDate: req.end_date,
+        days: calculateDays(req.start_date, req.end_date),
+        color: req.leave_types?.badge_color || '#3B82F6',
       }));
-      setMonthlyUsageData(mData);
+  }, [history]);
 
-      setYearlyUsageData([
-          { value: annualUsed, label: "Annual" },
-          { value: sickUsed, label: "Sick" },
-          { value: specialUsed, label: "Special" }
-      ]);
-
-      upcoming.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
-      setUpcomingLeaves(upcoming.slice(0, 3));
-    }
-  }, [employee, balances, history]);
-
-  const quickActions: QuickAction[] = [
+  // Quick action buttons
+  const quickActions = [
     {
-      id: 1,
-      title: "Apply Leave",
-      icon: <FileText color={isDarkMode ? "#F7F7F7" : "#1A1D23"} size={24} />,
-      link: "/pengajuan",
-      useLink: false,
+      icon: Plus,
+      label: "Ajukan Cuti",
+      color: "#3B82F6",
+      onPress: () => router.push("/(app)/pengajuan"),
     },
     {
-      id: 2,
-      title: "Convert Leave",
-      icon: <DollarSign color={isDarkMode ? "#F7F7F7" : "#1A1D23"} size={24} />,
-      link: "/konversi",
-      useLink: false,
+      icon: Clock,
+      label: "Riwayat",
+      color: "#10B981",
+      onPress: () => router.push("/(modals)/leave-history"),
     },
     {
-      id: 3,
-      title: "My Profile",
-      icon: <User color={isDarkMode ? "#F7F7F7" : "#1A1D23"} size={24} />,
-      link: "/profile",
-      useLink: true,
-    },
-    {
-      id: 4,
-      title: "Settings",
-      icon: <Settings color={isDarkMode ? "#F7F7F7" : "#1A1D23"} size={24} />,
-      link: "/settings",
-      useLink: true,
+      icon: Wallet,
+      label: "Konversi",
+      color: "#F59E0B",
+      onPress: () => router.push("/(app)/konversi"),
     },
   ];
 
-  const handleQuickActionPress = (link: QuickAction["link"]) => {
-    router.push(link);
+  // ✅ Navigate to reminder detail - using type assertion to bypass strict route checking
+  const navigateToReminder = (id: string) => {
+    router.push({
+      pathname: "/(modals)/reminder-detail" as any,
+      params: { id },
+    });
   };
 
   return (
-    <View
-      className={`${isDarkMode ? "bg-gray-900" : "bg-[#F7F7F7]"} flex-1`}
-      style={{
-        paddingBottom: insets.bottom,
-        paddingLeft: insets.left,
-        paddingRight: insets.right,
-      }}
-    >
-      <StatusBar style="light" />
-
-      {/* Header */}
-      <LinearGradient
-        colors={isDarkMode ? ["#1E3A8A", "#1E40AF"] : ["#3B82F6", "#60A5FA"]}
-        className="px-6 pb-6 rounded-b-3xl"
-        style={{ paddingTop: insets.top + 24 }}
-      >
-        <View className="flex-row justify-between items-center">
-          <View>
-            <Text className="text-white text-2xl font-bold">
-              Annual & Benefit
-            </Text>
-            <Text className="text-blue-100 text-sm mt-1">
-              {employee ? `${employee.full_name} • ${employee.role || '-'}` : "Welcome User"}
-            </Text>
-          </View>
-
-          <View className="flex-row items-center">
-            {switchReady && (
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                {isDarkMode ? (
-                  <Moon color="white" size={20} />
-                ) : (
-                  <Sun color="white" size={20} />
-                )}
-
-                <View className="ml-2">
-                  <Switch
-                    value={isDarkMode}
-                    onValueChange={toggleTheme}
-                    trackColor={{ false: "#D1D5DB", true: "#93C5FD" }}
-                    thumbColor={isDarkMode ? "#3B82F6" : "#FFFF"}
-                  />
-                </View>
-                <TouchableOpacity
-                  className="ml-4"
-                  onPress={() => router.push('/(modals)/notifications')}
-                >
-                  <Bell color="white" size={24} />
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      </LinearGradient>
-
-      {/* Main Content */}
+    <View className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}>
+      <StatusBar style={isDarkMode ? "light" : "dark"} />
+      
       <ScrollView
-        ref={scrollRef}
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 }} // ✅ Padding for Auto-Hide Tab Bar
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3B82F6" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-        onScroll={onScroll}
-        scrollEventThrottle={16}
+        contentContainerStyle={{ paddingBottom: 100 }}
       >
-        <View className="px-4 mt-6">
-          {/* Leave Balances */}
-          <View className="mb-6">
-            <Text
-              className={`${
-                isDarkMode ? "text-white" : "text-[#1A1D23]"
-              } text-lg font-bold mb-4`}
-            >
-              Leave Balances
-            </Text>
-            <View className="flex-row flex-wrap gap-4">
-              {leaveBalances.map((leave, index) => (
-                <View
-                  key={index}
-                  className={`${
-                    isDarkMode ? "bg-gray-800" : "bg-white"
-                  } rounded-xl p-4 flex-1 min-w-[45%] shadow-md`}
-                >
-                  <Text
-                    className={`${
-                      isDarkMode ? "text-gray-300" : "text-gray-500"
-                    } text-sm`}
-                  >
-                    {leave.type} Leave
-                  </Text>
-                  <Text
-                    className={`${
-                      isDarkMode ? "text-white" : "text-[#1A1D23]"
-                    } text-2xl font-bold mt-1`}
-                  >
-                    {leave.days - leave.used}
-                  </Text>
-                  <Text className="text-gray-500 text-xs mt-2">
-                    {leave.used} used of {leave.days} days
-                  </Text>
-                  <View className="mt-3">
-                    <View className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                      <View
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${(leave.used / Math.max(leave.days, 1)) * 100}%`,
-                          backgroundColor: leave.color,
-                        }}
-                      />
-                    </View>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </View>
-
-          {/* Quick Actions */}
-          <View className="mb-6">
-            <Text
-              className={`${
-                isDarkMode ? "text-white" : "text-[#1A1D23]"
-              } text-lg font-bold mb-4`}
-            >
-              Quick Actions
-            </Text>
-            <View className="flex-row flex-wrap gap-4">
-              {quickActions.map((action) => {
-                if (action.useLink) {
-                  return (
-                    <Link key={action.id} href={action.link} asChild>
-                      <TouchableOpacity
-                        className={`${
-                          isDarkMode ? "bg-gray-800" : "bg-white"
-                        } rounded-xl p-4 flex-1 min-w-[45%] shadow-md items-center`}
-                      >
-                        <View
-                          className={`${
-                            isDarkMode ? "bg-gray-700" : "bg-blue-100"
-                          } p-3 rounded-full mb-2`}
-                        >
-                          {action.icon}
-                        </View>
-                        <Text
-                          className={`${
-                            isDarkMode ? "text-white" : "text-[#1A1D23]"
-                          } font-semibold`}
-                        >
-                          {action.title}
-                        </Text>
-                      </TouchableOpacity>
-                    </Link>
-                  );
-                } else {
-                  return (
-                    <TouchableOpacity
-                      key={action.id}
-                      onPress={() => handleQuickActionPress(action.link)}
-                      className={`${
-                        isDarkMode ? "bg-gray-800" : "bg-white"
-                      } rounded-xl p-4 flex-1 min-w-[45%] shadow-md items-center`}
-                    >
-                      <View
-                        className={`${
-                          isDarkMode ? "bg-gray-700" : "bg-blue-100"
-                        } p-3 rounded-full mb-2`}
-                      >
-                        {action.icon}
-                      </View>
-                      <Text
-                        className={`${
-                          isDarkMode ? "text-white" : "text-[#1A1D23]"
-                        } font-semibold`}
-                      >
-                        {action.title}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                }
-              })}
-            </View>
-          </View>
-
-          {/* Charts */}
-          <View className="mb-6">
-            <Text
-              className={`${
-                isDarkMode ? "text-white" : "text-[#1A1D23]"
-              } text-lg font-bold mb-4`}
-            >
-              Leave Usage Analytics
-            </Text>
-
-            {/* Monthly Chart */}
-            <View
-              className={`${
-                isDarkMode ? "bg-gray-800" : "bg-white"
-              } rounded-xl p-4 shadow-md mb-4`}
-            >
-              <View className="flex-row justify-between items-center mb-4">
-                <Text
-                  className={`${
-                    isDarkMode ? "text-white" : "text-[#1A1D23]"
-                  } font-semibold`}
-                >
-                  Monthly Usage
-                </Text>
-                <TrendingUp
-                  color={isDarkMode ? "#10B981" : "#059669"}
-                  size={20}
-                />
-              </View>
-              <BarChart
-                data={monthlyUsageData}
-                width={screenWidth - 60}
-                height={150}
-                spacing={20}
-                barWidth={20}
-                xAxisLabelTextStyle={{
-                  color: isDarkMode ? "#9CA3AF" : "#6B7280",
-                  fontSize: 10,
-                }}
-                yAxisTextStyle={{
-                  color: isDarkMode ? "#9CA3AF" : "#6B7280",
-                  fontSize: 10,
-                }}
-                frontColor={isDarkMode ? "#3B82F6" : "#2563EB"}
-                yAxisThickness={0}
-                xAxisThickness={0}
-                rulesType="solid"
-                rulesColor={isDarkMode ? "#374151" : "#E5E7EB"}
-                initialSpacing={10}
-                endSpacing={10}
-              />
-            </View>
-
-            {/* Yearly Chart */}
-            <View
-              className={`${
-                isDarkMode ? "bg-gray-800" : "bg-white"
-              } rounded-xl p-4 shadow-md`}
-            >
-              <View className="flex-row justify-between items-center mb-4">
-                <Text
-                  className={`${
-                    isDarkMode ? "text-white" : "text-[#1A1D23]"
-                  } font-semibold`}
-                >
-                  Yearly Distribution
-                </Text>
-                <TrendingDown
-                  color={isDarkMode ? "#EF4444" : "#DC2626"}
-                  size={20}
-                />
-              </View>
-              <LineChart
-                data={yearlyUsageData}
-                width={screenWidth - 60}
-                height={150}
-                spacing={40}
-                curved
-                initialSpacing={10}
-                endSpacing={10}
-                areaChart
-                hideDataPoints
-                thickness={3}
-                color={isDarkMode ? "#10B981" : "#059669"}
-                startFillColor={isDarkMode ? "#10B981" : "#059669"}
-                startOpacity={0.8}
-                endFillColor={isDarkMode ? "#10B981" : "#059669"}
-                endOpacity={0.3}
-                gradientDirection="vertical"
-                hideRules
-                xAxisLabelTextStyle={{
-                  color: isDarkMode ? "#9CA3AF" : "#6B7280",
-                  fontSize: 10,
-                }}
-                yAxisTextStyle={{
-                  color: isDarkMode ? "#9CA3AF" : "#6B7280",
-                  fontSize: 10,
-                }}
-              />
-            </View>
-          </View>
-
-          {/* Recent Events */}
-          <View
-            className={`${
-              isDarkMode ? "bg-gray-800" : "bg-white"
-            } rounded-xl p-4 shadow-md mb-6`}
-          >
-            <View className="flex-row justify-between items-center mb-4">
-              <Text
-                className={`${
-                  isDarkMode ? "text-white" : "text-[#1A1D23]"
-                } text-lg font-bold`}
-              >
-                Recent Events
+        {/* Header */}
+        <LinearGradient
+          colors={isDarkMode ? ["#1E3A8A", "#1E40AF"] : ["#3B82F6", "#2563EB"]}
+          className="px-6 pb-8 rounded-b-3xl"
+          style={{ paddingTop: insets.top + 16 }}
+        >
+          <View className="flex-row items-center justify-between mb-6">
+            <View>
+              <Text className="text-blue-100 text-sm">{getGreeting()}</Text>
+              <Text className="text-white text-xl font-bold">
+                {employee?.full_name || "Loading..."}
               </Text>
-              <TouchableOpacity onPress={() => router.push('/(modals)/notifications')}>
-                <Text className="text-blue-500 text-sm font-medium">View All</Text>
+            </View>
+            <View className="flex-row items-center">
+              <TouchableOpacity
+                onPress={toggleTheme}
+                className="bg-white/20 p-2 rounded-full mr-3"
+              >
+                {isDarkMode ? (
+                  <Sun color="white" size={20} />
+                ) : (
+                  <Moon color="white" size={20} />
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => router.push("/(modals)/notifications")}
+                className="bg-white/20 p-2 rounded-full"
+              >
+                <Bell color="white" size={20} />
               </TouchableOpacity>
             </View>
-
-            {upcomingLeaves.length > 0 ? (
-              upcomingLeaves.map((leave, index) => (
-                <TouchableOpacity
-                  key={leave.id}
-                  className={`flex-row items-center ${index < upcomingLeaves.length - 1 ? 'mb-3' : ''}`}
-                  onPress={() => router.push('/(modals)/notifications')}
-                >
-                  <View className="w-3 h-3 rounded-full mr-3" style={{ backgroundColor: leave.color }} />
-                  <View>
-                    <Text
-                      className={`${
-                        isDarkMode ? "text-white" : "text-[#1A1D23]"
-                      } font-medium`}
-                    >
-                      {leave.type}
-                    </Text>
-                    <Text className="text-gray-500 text-sm">
-                      {leave.dateString}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))
-            ) : (
-              <Text className="text-gray-500 text-sm italic">No recent events</Text>
-            )}
-
           </View>
+
+          {/* Leave Balance Card */}
+          <View className="bg-white/20 backdrop-blur-lg rounded-2xl p-5">
+            <View className="flex-row justify-between items-center mb-4">
+              <Text className="text-white/90 font-medium">Saldo Cuti Tahunan</Text>
+              <View className="bg-white/30 px-3 py-1 rounded-full">
+                <Text className="text-white text-xs font-medium">
+                  {new Date().getFullYear()}
+                </Text>
+              </View>
+            </View>
+            
+            <View className="flex-row items-end justify-between">
+              <View>
+                <Text className="text-white text-5xl font-bold">
+                  {balanceUI.remaining}
+                </Text>
+                <Text className="text-white/70 mt-1">hari tersisa</Text>
+              </View>
+              <View className="items-end">
+                <Text className="text-white/80 text-sm">
+                  dari {balanceUI.total} hari
+                </Text>
+                <Text className="text-white/60 text-xs mt-1">
+                  Terpakai: {balanceUI.used} hari
+                </Text>
+              </View>
+            </View>
+
+            {/* Progress Bar */}
+            <View className="mt-4 h-2 bg-white/20 rounded-full overflow-hidden">
+              <View
+                className="h-full bg-white rounded-full"
+                style={{
+                  width: `${Math.min(100, (balanceUI.remaining / Math.max(1, balanceUI.total)) * 100)}%`,
+                }}
+              />
+            </View>
+          </View>
+        </LinearGradient>
+
+        {/* Quick Actions */}
+        <View className="px-6 -mt-4">
+          <View
+            className={`flex-row justify-around py-4 rounded-2xl shadow-lg ${
+              isDarkMode ? "bg-gray-800" : "bg-white"
+            }`}
+          >
+            {quickActions.map((action, index) => (
+              <TouchableOpacity
+                key={index}
+                className="items-center"
+                onPress={action.onPress}
+              >
+                <View
+                  className="w-12 h-12 rounded-full items-center justify-center mb-2"
+                  style={{ backgroundColor: `${action.color}15` }}
+                >
+                  <action.icon color={action.color} size={24} />
+                </View>
+                <Text
+                  className={`text-xs font-medium ${
+                    isDarkMode ? "text-gray-300" : "text-gray-600"
+                  }`}
+                >
+                  {action.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Stats Grid */}
+        <View className="px-6 mt-6">
+          <Text
+            className={`text-lg font-bold mb-4 ${
+              isDarkMode ? "text-white" : "text-gray-900"
+            }`}
+          >
+            Statistik
+          </Text>
+          <View className="flex-row flex-wrap justify-between">
+            {/* This Month */}
+            <View
+              className={`w-[48%] p-4 rounded-2xl mb-3 ${
+                isDarkMode ? "bg-gray-800" : "bg-white"
+              }`}
+            >
+              <View className="flex-row items-center mb-2">
+                <View className="bg-blue-100 dark:bg-blue-900/30 p-2 rounded-full mr-2">
+                  <Briefcase color="#3B82F6" size={16} />
+                </View>
+                <Text
+                  className={`text-xs ${
+                    isDarkMode ? "text-gray-400" : "text-gray-500"
+                  }`}
+                >
+                  Bulan Ini
+                </Text>
+              </View>
+              <Text
+                className={`text-2xl font-bold ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {stats.thisMonth} hari
+              </Text>
+            </View>
+
+            {/* This Year */}
+            <View
+              className={`w-[48%] p-4 rounded-2xl mb-3 ${
+                isDarkMode ? "bg-gray-800" : "bg-white"
+              }`}
+            >
+              <View className="flex-row items-center mb-2">
+                <View className="bg-green-100 dark:bg-green-900/30 p-2 rounded-full mr-2">
+                  <TrendingUp color="#10B981" size={16} />
+                </View>
+                <Text
+                  className={`text-xs ${
+                    isDarkMode ? "text-gray-400" : "text-gray-500"
+                  }`}
+                >
+                  Tahun Ini
+                </Text>
+              </View>
+              <Text
+                className={`text-2xl font-bold ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {stats.thisYear} hari
+              </Text>
+            </View>
+
+            {/* Pending */}
+            <View
+              className={`w-[48%] p-4 rounded-2xl ${
+                isDarkMode ? "bg-gray-800" : "bg-white"
+              }`}
+            >
+              <View className="flex-row items-center mb-2">
+                <View className="bg-yellow-100 dark:bg-yellow-900/30 p-2 rounded-full mr-2">
+                  <Clock color="#F59E0B" size={16} />
+                </View>
+                <Text
+                  className={`text-xs ${
+                    isDarkMode ? "text-gray-400" : "text-gray-500"
+                  }`}
+                >
+                  Pending
+                </Text>
+              </View>
+              <Text
+                className={`text-2xl font-bold ${
+                  isDarkMode ? "text-white" : "text-gray-900"
+                }`}
+              >
+                {stats.pending}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Upcoming Leaves */}
+        <View className="px-6 mt-6">
+          <View className="flex-row items-center justify-between mb-4">
+            <Text
+              className={`text-lg font-bold ${
+                isDarkMode ? "text-white" : "text-gray-900"
+              }`}
+            >
+              Cuti Mendatang
+            </Text>
+            <TouchableOpacity
+              onPress={() => router.push("/(modals)/leave-history")}
+              className="flex-row items-center"
+            >
+              <Text className="text-blue-500 text-sm mr-1">Lihat Semua</Text>
+              <ChevronRight color="#3B82F6" size={16} />
+            </TouchableOpacity>
+          </View>
+
+          {upcomingLeaves.length === 0 ? (
+            <View
+              className={`p-6 rounded-2xl items-center ${
+                isDarkMode ? "bg-gray-800" : "bg-white"
+              }`}
+            >
+              <Clock color="#9CA3AF" size={32} />
+              <Text
+                className={`mt-2 ${
+                  isDarkMode ? "text-gray-400" : "text-gray-500"
+                }`}
+              >
+                Tidak ada cuti mendatang
+              </Text>
+            </View>
+          ) : (
+            upcomingLeaves.map((leave) => (
+              <TouchableOpacity
+                key={leave.id}
+                className={`p-4 rounded-2xl mb-3 flex-row items-center ${
+                  isDarkMode ? "bg-gray-800" : "bg-white"
+                }`}
+                onPress={() => navigateToReminder(leave.id)}
+              >
+                <View
+                  className="w-12 h-12 rounded-full items-center justify-center mr-4"
+                  style={{ backgroundColor: `${leave.color}20` }}
+                >
+                  <Briefcase color={leave.color} size={20} />
+                </View>
+                <View className="flex-1">
+                  <Text
+                    className={`font-semibold ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                  >
+                    {leave.type}
+                  </Text>
+                  <Text
+                    className={`text-sm ${
+                      isDarkMode ? "text-gray-400" : "text-gray-500"
+                    }`}
+                  >
+                    {formatDateID(leave.startDate)} - {formatDateID(leave.endDate)}
+                  </Text>
+                </View>
+                <View className="items-end">
+                  <Text
+                    className={`font-bold ${
+                      isDarkMode ? "text-white" : "text-gray-900"
+                    }`}
+                  >
+                    {leave.days} hari
+                  </Text>
+                  <ChevronRight
+                    color={isDarkMode ? "#9CA3AF" : "#6B7280"}
+                    size={16}
+                  />
+                </View>
+              </TouchableOpacity>
+            ))
+          )}
         </View>
       </ScrollView>
     </View>
