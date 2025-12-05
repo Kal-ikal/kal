@@ -2,236 +2,355 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/utils/formatters.ts
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ COMPLETE: All formatting utilities
+// ✅ V5: Type-safe formatters with proper null handling
+// ===========================================================
+
+import type { LeaveStatus, UserRole, ApprovalStage } from '@/types/database';
+
+// ===========================================================
+// DATE FORMATTERS
 // ===========================================================
 
 /**
- * Format number as Indonesian Rupiah
+ * Format date to Indonesian locale (e.g., "28 November 2025")
+ * Handles null/undefined safely
  */
-export const formatIDR = (amount: number): string => {
+export function formatDateID(date: string | null | undefined): string {
+  if (!date) return '-';
+  
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '-';
+    
+    return d.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return '-';
+  }
+}
+
+/**
+ * Format date to short format (e.g., "28 Nov 2025")
+ */
+export function formatDateShort(date: string | null | undefined): string {
+  if (!date) return '-';
+  
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '-';
+    
+    return d.toLocaleDateString('id-ID', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return '-';
+  }
+}
+
+/**
+ * Format date to ISO format (e.g., "2025-11-28")
+ */
+export function formatDateISO(date: Date | string | null | undefined): string {
+  if (!date) return '';
+  
+  try {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    if (isNaN(d.getTime())) return '';
+    
+    return d.toISOString().split('T')[0];
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Format relative time (e.g., "2 jam yang lalu", "kemarin")
+ */
+export function formatRelativeTime(date: string | null | undefined): string {
+  if (!date) return '-';
+  
+  try {
+    const d = new Date(date);
+    if (isNaN(d.getTime())) return '-';
+    
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'Baru saja';
+    if (diffMins < 60) return `${diffMins} menit yang lalu`;
+    if (diffHours < 24) return `${diffHours} jam yang lalu`;
+    if (diffDays === 1) return 'Kemarin';
+    if (diffDays < 7) return `${diffDays} hari yang lalu`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} minggu yang lalu`;
+    
+    return formatDateShort(date);
+  } catch {
+    return '-';
+  }
+}
+
+/**
+ * Calculate years of service from join date
+ */
+export function getYearsOfService(joinDate: string | null | undefined): string {
+  if (!joinDate) return '-';
+  
+  try {
+    const start = new Date(joinDate);
+    if (isNaN(start.getTime())) return '-';
+    
+    const now = new Date();
+    const diffMs = now.getTime() - start.getTime();
+    const years = diffMs / (1000 * 60 * 60 * 24 * 365.25);
+    
+    if (years < 0) return '-';
+    if (years < 1) return '< 1';
+    
+    return years.toFixed(1);
+  } catch {
+    return '-';
+  }
+}
+
+/**
+ * Calculate number of days between two dates (inclusive)
+ */
+export function calculateDays(
+  startDate: string | null | undefined, 
+  endDate: string | null | undefined
+): number {
+  if (!startDate || !endDate) return 0;
+  
+  try {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return 0;
+    
+    const diffMs = end.getTime() - start.getTime();
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24)) + 1;
+  } catch {
+    return 0;
+  }
+}
+
+// ===========================================================
+// CURRENCY FORMATTERS
+// ===========================================================
+
+/**
+ * Format number to IDR currency (e.g., "Rp 4.000.000")
+ */
+export function formatIDR(amount: number | null | undefined): string {
+  if (amount === null || amount === undefined) return 'Rp 0';
+  
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(amount);
-};
+}
 
 /**
- * Format date as Indonesian format (DD MMM YYYY)
+ * Format number with thousand separators (e.g., "4.000.000")
  */
-export const formatDateID = (dateString: string): string => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-};
-
-/**
- * Format date as full Indonesian format (DD MMMM YYYY)
- */
-export const formatDateFullID = (dateString: string): string => {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  });
-};
-
-/**
- * Format date range (DD MMM - DD MMM YYYY)
- */
-export const formatDateRange = (startDate: string, endDate: string): string => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
+export function formatNumber(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '0';
   
-  const startStr = start.toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-  });
-  
-  const endStr = end.toLocaleDateString('id-ID', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-  
-  return `${startStr} - ${endStr}`;
-};
+  return new Intl.NumberFormat('id-ID').format(value);
+}
+
+// ===========================================================
+// PHONE FORMATTERS
+// ===========================================================
 
 /**
- * Calculate days between two dates (inclusive)
+ * Format phone number for display (e.g., "0812-3456-7890")
  */
-export const calculateDays = (startDate: string, endDate: string): number => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const diffTime = Math.abs(end.getTime() - start.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-  return diffDays;
-};
-
-/**
- * Format relative time (e.g., "5 menit yang lalu")
- */
-export const formatRelativeTime = (dateString: string): string => {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSeconds = Math.floor(diffMs / 1000);
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  const diffHours = Math.floor(diffMinutes / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffSeconds < 60) {
-    return 'Baru saja';
-  } else if (diffMinutes < 60) {
-    return `${diffMinutes} menit yang lalu`;
-  } else if (diffHours < 24) {
-    return `${diffHours} jam yang lalu`;
-  } else if (diffDays === 1) {
-    return 'Kemarin';
-  } else if (diffDays < 7) {
-    return `${diffDays} hari yang lalu`;
-  } else if (diffDays < 30) {
-    const weeks = Math.floor(diffDays / 7);
-    return `${weeks} minggu yang lalu`;
-  } else {
-    return formatDateID(dateString);
+export function formatPhoneDisplay(phone: string | null | undefined): string {
+  if (!phone) return '-';
+  
+  // Remove non-digits
+  const digits = phone.replace(/\D/g, '');
+  
+  if (digits.length < 10) return phone;
+  
+  // Format as 0812-3456-7890
+  if (digits.startsWith('62')) {
+    const local = '0' + digits.slice(2);
+    return formatPhoneLocal(local);
   }
-};
+  
+  return formatPhoneLocal(digits);
+}
+
+function formatPhoneLocal(digits: string): string {
+  if (digits.length === 10) {
+    return `${digits.slice(0, 4)}-${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  if (digits.length === 11) {
+    return `${digits.slice(0, 4)}-${digits.slice(4, 8)}-${digits.slice(8)}`;
+  }
+  if (digits.length === 12) {
+    return `${digits.slice(0, 4)}-${digits.slice(4, 8)}-${digits.slice(8)}`;
+  }
+  return digits;
+}
+
+// ===========================================================
+// VALUE FORMATTERS
+// ===========================================================
 
 /**
- * Get status color based on status string
+ * Safe value formatter - returns "-" for null/undefined/empty
  */
-export const getStatusColor = (status: string): { bg: string; text: string } => {
-  const normalizedStatus = status?.toLowerCase() || '';
-  
-  if (normalizedStatus === 'approved' || normalizedStatus === 'disetujui') {
-    return { bg: '#DEF7EC', text: '#03543F' };
-  }
-  if (normalizedStatus === 'rejected' || normalizedStatus === 'ditolak') {
-    return { bg: '#FDE8E8', text: '#9B1C1C' };
-  }
-  if (normalizedStatus === 'pending' || normalizedStatus === 'dalam proses') {
-    return { bg: '#FEF3C7', text: '#92400E' };
-  }
-  // Default
-  return { bg: '#E5E7EB', text: '#374151' };
-};
+export function formatValue(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return '-';
+  return String(value);
+}
 
 /**
- * Get status label in Indonesian
+ * Format leave balance for display
  */
-export const getStatusLabel = (status: string): string => {
-  const normalizedStatus = status?.toLowerCase() || '';
-  
-  switch (normalizedStatus) {
+export function formatLeaveBalance(balance: number | null | undefined): string {
+  if (balance === null || balance === undefined) return '0 hari';
+  return `${balance} hari`;
+}
+
+// ===========================================================
+// STATUS FORMATTERS
+// ===========================================================
+
+/**
+ * Get Indonesian label for leave status
+ */
+export function getStatusLabel(status: LeaveStatus | string | null | undefined): string {
+  switch (status?.toLowerCase()) {
+    case 'pending':
+      return 'Menunggu';
     case 'approved':
       return 'Disetujui';
     case 'rejected':
       return 'Ditolak';
+    default:
+      return status || '-';
+  }
+}
+
+/**
+ * Get colors for status badge
+ */
+export function getStatusColor(status: LeaveStatus | string | null | undefined): {
+  bg: string;
+  text: string;
+  border: string;
+} {
+  switch (status?.toLowerCase()) {
     case 'pending':
-      return 'Dalam Proses';
-    case 'completed':
-      return 'Selesai';
+      return {
+        bg: '#FEF3C7',
+        text: '#D97706',
+        border: '#F59E0B',
+      };
+    case 'approved':
+      return {
+        bg: '#D1FAE5',
+        text: '#059669',
+        border: '#10B981',
+      };
+    case 'rejected':
+      return {
+        bg: '#FEE2E2',
+        text: '#DC2626',
+        border: '#EF4444',
+      };
     default:
-      return status || 'Unknown';
+      return {
+        bg: '#F3F4F6',
+        text: '#6B7280',
+        border: '#9CA3AF',
+      };
   }
-};
+}
 
 /**
- * Get approval stage label in Indonesian
+ * Get Indonesian label for user role
  */
-export const getStageLabel = (stage: string): string => {
-  const normalizedStage = stage?.toLowerCase() || '';
-  
-  switch (normalizedStage) {
-    case 'manager':
-      return 'Menunggu Persetujuan Manager';
-    case 'dfd':
-      return 'Menunggu Persetujuan DFD';
-    case 'hrd':
-      return 'Menunggu Persetujuan HRD';
-    case 'completed':
-      return 'Proses Selesai';
-    default:
-      return stage || 'Unknown';
-  }
-};
-
-/**
- * Get leave type badge color
- * Falls back to default blue if not specified
- */
-export const getLeaveTypeColor = (badgeColor: string | null | undefined): string => {
-  if (!badgeColor) return '#3B82F6';
-  
-  // Map color names to hex if needed
-  const colorMap: Record<string, string> = {
-    blue: '#3B82F6',
-    red: '#EF4444',
-    green: '#10B981',
-    yellow: '#F59E0B',
-    purple: '#8B5CF6',
-    orange: '#F97316',
-    pink: '#EC4899',
-    indigo: '#6366F1',
-  };
-  
-  return colorMap[badgeColor.toLowerCase()] || badgeColor;
-};
-
-/**
- * Get role label in Indonesian
- */
-export const getRoleLabel = (role: string): string => {
+export function getRoleLabel(role: UserRole | string | null | undefined): string {
   switch (role?.toLowerCase()) {
     case 'employee':
       return 'Karyawan';
     case 'manager':
       return 'Manager';
     case 'dfd':
-      return 'DFD';
+      return 'Direktur';
     case 'hrd':
       return 'HRD';
     default:
-      return role || 'Unknown';
+      return role || '-';
   }
-};
+}
 
 /**
- * Format phone number for display
+ * Get Indonesian label for approval stage
  */
-export const formatPhone = (phone: string | null | undefined): string => {
-  if (!phone) return '-';
-  
-  // Simple formatting - add dashes
-  const cleaned = phone.replace(/\D/g, '');
-  if (cleaned.length <= 4) return cleaned;
-  if (cleaned.length <= 8) return `${cleaned.slice(0, 4)}-${cleaned.slice(4)}`;
-  return `${cleaned.slice(0, 4)}-${cleaned.slice(4, 8)}-${cleaned.slice(8)}`;
-};
-
-/**
- * Truncate text with ellipsis
- */
-export const truncateText = (text: string, maxLength: number): string => {
-  if (!text || text.length <= maxLength) return text;
-  return text.slice(0, maxLength - 3) + '...';
-};
-
-/**
- * Get initials from name
- */
-export const getInitials = (name: string): string => {
-  if (!name) return '?';
-  
-  const words = name.trim().split(' ');
-  if (words.length === 1) {
-    return words[0].slice(0, 2).toUpperCase();
+export function getStageLabel(stage: ApprovalStage | string | null | undefined): string {
+  switch (stage?.toLowerCase()) {
+    case 'manager':
+      return 'Manager';
+    case 'dfd':
+      return 'Direktur';
+    case 'hrd':
+      return 'HRD';
+    case 'completed':
+      return 'Selesai';
+    default:
+      return stage || '-';
   }
-  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-};
+}
+
+// ===========================================================
+// LEAVE TYPE HELPERS
+// ===========================================================
+
+/**
+ * Get badge color for leave type
+ */
+export function getLeaveTypeColor(code: string | null | undefined): string {
+  switch (code?.toUpperCase()) {
+    case 'CT':
+      return '#3B82F6'; // blue
+    case 'SK':
+      return '#EF4444'; // red
+    case 'MAT':
+      return '#8B5CF6'; // purple
+    case 'UNPD':
+      return '#F97316'; // orange
+    default:
+      return '#6B7280'; // gray
+  }
+}
+
+/**
+ * Get background color for leave type badge
+ */
+export function getLeaveTypeBgColor(code: string | null | undefined, isDark: boolean = false): string {
+  const baseColors: Record<string, { light: string; dark: string }> = {
+    CT: { light: '#DBEAFE', dark: '#1E3A5F' },
+    SK: { light: '#FEE2E2', dark: '#5F1E1E' },
+    MAT: { light: '#EDE9FE', dark: '#3B1E5F' },
+    UNPD: { light: '#FFEDD5', dark: '#5F3B1E' },
+  };
+  
+  const colors = baseColors[code?.toUpperCase() || ''] || { light: '#F3F4F6', dark: '#374151' };
+  return isDark ? colors.dark : colors.light;
+}

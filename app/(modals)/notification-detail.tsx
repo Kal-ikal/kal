@@ -7,12 +7,12 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from "react-native";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { ChevronLeft, Calendar, Clock, User, FileText, CheckCircle } from "lucide-react-native";
+import { ChevronLeft,  FileText, CheckCircle } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "@/lib/supabase";
-import { formatDateID, formatDateFullID, calculateDays, getStatusLabel, getStatusColor, getStageLabel } from "@/utils/formatters";
+import {  formatDateID, calculateDays, getStatusLabel, getStatusColor, getStageLabel } from "@/utils/formatters";
 import type { LeaveRequestFull } from "@/types/database";
 
 export default function NotificationDetail() {
@@ -111,7 +111,7 @@ export default function NotificationDetail() {
             {leaveTypeName}
           </Text>
           <Text className={`mt-2 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-            {formatDateFullID(request.created_at)}
+            {formatDateID(request.created_at)}
           </Text>
 
           {/* Divider */}

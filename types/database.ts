@@ -2,7 +2,7 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/types/database.ts
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ FIXED V4: Proper LeaveBalanceUI type (no map method)
+// ✅ V5: Comprehensive types with proper null handling
 // ===========================================================
 
 // ===========================================================
@@ -41,6 +41,7 @@ export interface Department {
   id: string;
   name: string;
   code: string;
+  description: string | null;
   created_at: string;
 }
 
@@ -70,7 +71,7 @@ export interface LeaveRequest {
   approved_by_dfd: boolean;
   approved_by_hrd: boolean;
   created_at: string;
-  updated_at: string;
+  updated_at?: string;
 }
 
 export interface Notification {
@@ -172,7 +173,6 @@ export interface ProfileUpdate {
 
 /**
  * Single object for leave balance display (home.tsx)
- * ✅ FIX: No map method - this is just a simple object
  */
 export interface LeaveBalanceUI {
   total: number;
@@ -182,7 +182,6 @@ export interface LeaveBalanceUI {
 
 /**
  * Array item for leave balance (konversi.tsx)
- * Uses data from master data (leave_types table)
  */
 export interface LeaveBalanceItem {
   id: string;
@@ -198,27 +197,32 @@ export interface LeaveBalanceItem {
 export interface UpcomingLeaveUI {
   id: string;
   type: string;
+  typeCode: string;
   startDate: string;
   endDate: string;
   days: number;
   status: LeaveStatus;
+  color: string;
 }
 
 export interface PendingApprovalItem {
   id: string;
+  requestId: string;
   employeeName: string;
   employeeEmail: string;
   department: string;
   leaveType: string;
+  leaveTypeCode: string;
   startDate: string;
   endDate: string;
   days: number;
   reason: string;
   currentStage: ApprovalStage;
+  createdAt: string;
 }
 
 // ===========================================================
-// RPC TYPES
+// SERVICE/RPC TYPES
 // ===========================================================
 
 export interface SubmitLeaveRequestParams {
@@ -227,7 +231,7 @@ export interface SubmitLeaveRequestParams {
   endDate: string;
   reason: string;
   leaveTypeId: string;
-  documentUrl?: string;
+  documentUrl?: string | null;
 }
 
 export interface ApproveLeaveRequestParams {
@@ -247,15 +251,22 @@ export interface EncashmentRequestParams {
   amount: number;
 }
 
+export interface ServiceResult<T = void> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}
+
 // ===========================================================
-// ROUTE TYPES (for type-safe navigation)
+// ROUTE TYPES
 // ===========================================================
 
 export type AppRoute = 
+  | '/'
   | '/(app)/home'
+  | '/(app)/profile'
   | '/(app)/pengajuan'
   | '/(app)/konversi'
-  | '/(app)/profile'
   | '/(app)/settings'
   | '/(modals)/notifications'
   | '/(modals)/leave-history'
@@ -263,19 +274,17 @@ export type AppRoute =
   | '/(modals)/reminder-detail';
 
 // ===========================================================
-// LEGACY TYPES (backward compatibility)
+// HELPER TYPE GUARDS
 // ===========================================================
 
-/**
- * @deprecated Use Profile instead
- */
-export type UserProfile = Profile;
+export function isValidRole(role: string): role is UserRole {
+  return ['employee', 'manager', 'dfd', 'hrd'].includes(role);
+}
 
-/**
- * @deprecated Use LeaveBalanceUI instead  
- */
-export interface LeaveBalance {
-  total: number;
-  used: number;
-  remaining: number;
+export function isValidStatus(status: string): status is LeaveStatus {
+  return ['pending', 'approved', 'rejected'].includes(status);
+}
+
+export function isValidStage(stage: string): stage is ApprovalStage {
+  return ['manager', 'dfd', 'hrd', 'completed'].includes(stage);
 }

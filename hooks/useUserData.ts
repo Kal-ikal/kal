@@ -2,10 +2,7 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/hooks/useUserData.ts
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ FIXED V4: 
-//    - Uses master data from database for leave types
-//    - getLeaveBalanceArray uses actual leave_types from DB
-//    - Handles departments dynamically
+// ✅ V5: Fixed all TypeScript warnings, proper null handling
 // ===========================================================
 
 import { useState, useEffect, useCallback } from 'react';
@@ -16,20 +13,11 @@ import type {
   LeaveType, 
   LeaveRequestWithType,
   Notification,
-  LeaveBalanceUI 
+  LeaveBalanceUI,
+  LeaveBalanceItem,
+  Department,
 } from '@/types/database';
-
-// Type for array version (used by konversi.tsx)
-export interface LeaveBalanceItem {
-  id: string;
-  type: string;
-  code: string;
-  total: number;
-  used: number;
-  remaining: number;
-  isQuotaDeduction: boolean;
-  maxDays: number | null;
-}
+import { calculateDays } from '@/utils/formatters';
 
 // ===========================================================
 // MAIN HOOK: useUserData
@@ -56,50 +44,46 @@ export function useUserData() {
       setLoading(true);
       setError(null);
 
-      // Fetch profile
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      // Parallel fetch for better performance
+      const [profileResult, typesResult, historyResult] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single(),
+        supabase
+          .from('leave_types')
+          .select('*')
+          .order('name'),
+        supabase
+          .from('leave_requests')
+          .select(`*, leave_types (*)`)
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false }),
+      ]);
 
-      if (profileError) {
-        console.error('Error fetching profile:', profileError);
-        setError(profileError.message);
+      if (profileResult.error) {
+        console.error('Error fetching profile:', profileResult.error);
+        setError(profileResult.error.message);
       } else {
-        setEmployee(profileData);
+        setEmployee(profileResult.data);
       }
 
-      // Fetch leave types from MASTER DATA
-      const { data: typesData, error: typesError } = await supabase
-        .from('leave_types')
-        .select('*')
-        .order('name');
-
-      if (typesError) {
-        console.error('Error fetching leave types:', typesError);
+      if (typesResult.error) {
+        console.error('Error fetching leave types:', typesResult.error);
       } else {
-        setLeaveTypes(typesData || []);
+        setLeaveTypes(typesResult.data || []);
       }
 
-      // Fetch leave history with types
-      const { data: historyData, error: historyError } = await supabase
-        .from('leave_requests')
-        .select(`
-          *,
-          leave_types (*)
-        `)
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-
-      if (historyError) {
-        console.error('Error fetching history:', historyError);
+      if (historyResult.error) {
+        console.error('Error fetching history:', historyResult.error);
       } else {
-        setHistory(historyData || []);
+        setHistory(historyResult.data || []);
       }
-    } catch (err: any) {
-      console.error('Unexpected error in fetchData:', err);
-      setError(err.message || 'Unknown error');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      console.error('Unexpected error in fetchData:', message);
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -111,21 +95,21 @@ export function useUserData() {
   }, [fetchData]);
 
   // =========================================================
-  // Calculate leave balance for UI - returns SINGLE OBJECT
-  // Used by: home.tsx
+  // Calculate leave balance - SINGLE OBJECT VERSION
+  // Used by: home.tsx, profile.tsx
   // =========================================================
   const getLeaveBalanceUI = useCallback((): LeaveBalanceUI => {
-    // Default values
     const defaultBalance: LeaveBalanceUI = { total: 12, used: 0, remaining: 12 };
     
     if (!employee) {
       return defaultBalance;
     }
 
-    // Get current year approved requests with quota deduction
     const currentYear = new Date().getFullYear();
+    
+    // Get approved requests that deduct quota
     const approvedWithQuota = history.filter(req => {
-      const isApproved = req.status?.toLowerCase() === 'approved';
+      const isApproved = req.status === 'approved';
       const isThisYear = new Date(req.start_date).getFullYear() === currentYear;
       const deductsQuota = req.leave_types?.is_quota_deduction === true;
       return isApproved && isThisYear && deductsQuota;
@@ -133,74 +117,59 @@ export function useUserData() {
 
     // Calculate days used
     const daysUsed = approvedWithQuota.reduce((sum, req) => {
-      const start = new Date(req.start_date);
-      const end = new Date(req.end_date);
-      const days = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      return sum + days;
+      return sum + calculateDays(req.start_date, req.end_date);
     }, 0);
 
-    // Use leave_balance from profile as remaining (already deducted by triggers)
+    // Use leave_balance from profile as remaining
     const remaining = employee.leave_balance ?? 12;
     const total = remaining + daysUsed;
 
-    // Return object matching LeaveBalanceUI interface exactly
-    const result: LeaveBalanceUI = {
-      total: total,
-      used: daysUsed,
-      remaining: remaining,
-    };
-
-    return result;
+    return { total, used: daysUsed, remaining };
   }, [employee, history]);
 
   // =========================================================
-  // Calculate leave balance ARRAY - for konversi.tsx
-  // ✅ FIXED: Uses actual leave_types from master data
+  // Calculate leave balance - ARRAY VERSION
+  // Used by: konversi.tsx (maps over leave types from master data)
   // =========================================================
   const getLeaveBalanceArray = useCallback((): LeaveBalanceItem[] => {
-    if (!employee) {
+    if (!employee || leaveTypes.length === 0) {
       return [];
     }
 
     const currentYear = new Date().getFullYear();
     const result: LeaveBalanceItem[] = [];
 
-    // Process each leave type from master data
     leaveTypes.forEach(leaveType => {
       // Calculate used days for this specific leave type
       const usedDays = history.filter(req => {
-        const isApproved = req.status?.toLowerCase() === 'approved';
+        const isApproved = req.status === 'approved';
         const isThisYear = new Date(req.start_date).getFullYear() === currentYear;
         const isThisType = req.leave_type_id === leaveType.id;
         return isApproved && isThisYear && isThisType;
       }).reduce((sum, req) => {
-        const start = new Date(req.start_date);
-        const end = new Date(req.end_date);
-        return sum + Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        return sum + calculateDays(req.start_date, req.end_date);
       }, 0);
 
-      // For quota deduction types (like CT/Annual), use actual balance from profile
-      // For non-quota types, use max_days as total
       let total: number;
       let remaining: number;
 
       if (leaveType.is_quota_deduction) {
-        // This is the main annual leave - use profile's leave_balance
+        // Main annual leave - use profile's leave_balance
         remaining = employee.leave_balance ?? 12;
         total = remaining + usedDays;
       } else {
-        // Non-quota types (sick, maternity, etc) - use max_days
+        // Non-quota types - use max_days
         total = leaveType.max_days ?? 0;
-        remaining = total - usedDays;
+        remaining = Math.max(0, total - usedDays);
       }
 
       result.push({
         id: leaveType.id,
         type: leaveType.name,
         code: leaveType.code,
-        total: total,
+        total,
         used: usedDays,
-        remaining: Math.max(0, remaining),
+        remaining,
         isQuotaDeduction: leaveType.is_quota_deduction,
         maxDays: leaveType.max_days,
       });
@@ -209,32 +178,23 @@ export function useUserData() {
     return result;
   }, [employee, history, leaveTypes]);
 
-  // Return both 'employee' and 'profile' for backward compatibility
   return {
-    // Primary export
     employee,
-    // Alias for backward compatibility (settings.tsx uses 'profile')
-    profile: employee,
-    // Other data
+    profile: employee, // Alias for backward compatibility
     leaveTypes,
     history,
     loading,
     error,
     refetch: fetchData,
-    // Single object version (for home.tsx)
     getLeaveBalanceUI,
-    // Array version (for konversi.tsx) - now uses master data
     getLeaveBalanceArray,
   };
 }
 
 // ===========================================================
-// ADDITIONAL HOOKS
+// useLeaveTypes - Fetch leave types only
 // ===========================================================
 
-/**
- * Hook untuk fetch leave types saja (from master data)
- */
 export function useLeaveTypes() {
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [loading, setLoading] = useState(true);
@@ -253,8 +213,8 @@ export function useLeaveTypes() {
       } else {
         setLeaveTypes(data || []);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
@@ -267,11 +227,12 @@ export function useLeaveTypes() {
   return { leaveTypes, loading, error, refetch: fetchLeaveTypes };
 }
 
-/**
- * Hook untuk fetch departments (from master data)
- */
+// ===========================================================
+// useDepartments - Fetch departments from master data
+// ===========================================================
+
 export function useDepartments() {
-  const [departments, setDepartments] = useState<{ id: string; name: string; code: string }[]>([]);
+  const [departments, setDepartments] = useState<Department[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -288,8 +249,8 @@ export function useDepartments() {
       } else {
         setDepartments(data || []);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
@@ -302,9 +263,10 @@ export function useDepartments() {
   return { departments, loading, error, refetch: fetchDepartments };
 }
 
-/**
- * Hook untuk pending approvals (untuk manager/dfd/hrd)
- */
+// ===========================================================
+// usePendingApprovals - For managers/dfd/hrd
+// ===========================================================
+
 export function usePendingApprovals() {
   const { session } = useAuth();
   const userId = session?.user?.id;
@@ -322,7 +284,7 @@ export function usePendingApprovals() {
     try {
       setLoading(true);
       
-      // Fetch user's role first
+      // Get user's role
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
@@ -340,16 +302,13 @@ export function usePendingApprovals() {
           *,
           leave_types (*),
           profiles!leave_requests_user_id_fkey (
-            id,
-            full_name,
-            email,
-            department
+            id, full_name, email, department
           )
         `)
         .eq('status', 'pending')
         .order('created_at', { ascending: false });
 
-      // Filter based on role and current_stage
+      // Filter by role and current_stage
       if (profile.role === 'manager') {
         query = query.eq('current_stage', 'manager');
       } else if (profile.role === 'dfd') {
@@ -365,8 +324,8 @@ export function usePendingApprovals() {
       } else {
         setApprovals(data || []);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
@@ -375,20 +334,16 @@ export function usePendingApprovals() {
   useEffect(() => {
     fetchApprovals();
 
-    // Subscribe to realtime changes
+    // Realtime subscription
     const channel = supabase
       .channel('pending-approvals')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'leave_requests',
-        },
-        () => {
-          fetchApprovals();
-        }
-      )
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'leave_requests',
+      }, () => {
+        fetchApprovals();
+      })
       .subscribe();
 
     return () => {
@@ -399,9 +354,10 @@ export function usePendingApprovals() {
   return { approvals, loading, error, refetch: fetchApprovals };
 }
 
-/**
- * Hook untuk notifications
- */
+// ===========================================================
+// useNotifications
+// ===========================================================
+
 export function useNotifications() {
   const { session } = useAuth();
   const userId = session?.user?.id;
@@ -430,11 +386,12 @@ export function useNotifications() {
       if (fetchError) {
         setError(fetchError.message);
       } else {
-        setNotifications(data || []);
-        setUnreadCount((data || []).filter(n => !n.is_read).length);
+        const notifs = data || [];
+        setNotifications(notifs);
+        setUnreadCount(notifs.filter(n => !n.is_read).length);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
@@ -464,26 +421,24 @@ export function useNotifications() {
   useEffect(() => {
     fetchNotifications();
 
-    // Subscribe to realtime changes
-    const channel = supabase
-      .channel('notifications-realtime')
-      .on(
-        'postgres_changes',
-        {
+    // Realtime subscription
+    if (userId) {
+      const channel = supabase
+        .channel('notifications-realtime')
+        .on('postgres_changes', {
           event: '*',
           schema: 'public',
           table: 'notifications',
           filter: `user_id=eq.${userId}`,
-        },
-        () => {
+        }, () => {
           fetchNotifications();
-        }
-      )
-      .subscribe();
+        })
+        .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, [fetchNotifications, userId]);
 
   return { 

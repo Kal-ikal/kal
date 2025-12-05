@@ -2,7 +2,7 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/app/(app)/profile.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ FIXED V4: Handle null for join_date and leave_balance
+// ✅ V5: All TypeScript warnings fixed, proper null handling
 // ===========================================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -40,40 +40,19 @@ import Animated, {
 import { useUserData } from "@/hooks/useUserData";
 import { useScrollHandler } from "@/hooks/useScrollHandler";
 import { useScrollToTop } from "@react-navigation/native";
-import { formatDateID, getStatusLabel, getStatusColor } from "@/utils/formatters";
+import { 
+  formatDateID, 
+  getStatusLabel, 
+  getStatusColor,
+  formatValue,
+  getRoleLabel,
+  getYearsOfService,
+  formatPhoneDisplay,
+} from "@/utils/formatters";
 
 cssInterop(LinearGradient, { className: "style" });
 
-// Helper for empty state - handles null, undefined, empty string
-const formatValue = (value: string | number | null | undefined): string => {
-  if (value === null || value === undefined || value === "") return "-";
-  return String(value);
-};
-
-// ✅ FIX: Handle null | undefined for join_date
-const getYearsOfService = (joinDate: string | null | undefined): string => {
-  if (!joinDate) return "-";
-  try {
-    const start = new Date(joinDate);
-    const now = new Date();
-    const diff = now.getTime() - start.getTime();
-    const years = diff / (1000 * 60 * 60 * 24 * 365.25);
-    return years.toFixed(1);
-  } catch {
-    return "-";
-  }
-};
-
-// Mapping role ke label yang lebih readable
-const getRoleLabel = (role: string | null | undefined): string => {
-  switch (role) {
-    case 'employee': return 'Karyawan';
-    case 'manager': return 'Manager';
-    case 'dfd': return 'DFD (Direktur)';
-    case 'hrd': return 'HRD';
-    default: return role || '-';
-  }
-};
+const DEFAULT_AVATAR = "https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=900&auto=format&fit=crop&q=60";
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -87,7 +66,7 @@ export default function ProfileScreen() {
   const { employee, history, loading } = useUserData();
 
   const [showEditModal, setShowEditModal] = useState(false);
-  const [avatar, setAvatar] = useState("https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=900&auto=format&fit=crop&q=60");
+  const [avatar, setAvatar] = useState(DEFAULT_AVATAR);
 
   // Update avatar when employee data loads
   useEffect(() => {
@@ -101,11 +80,7 @@ export default function ProfileScreen() {
   const previewAnim = useSharedValue(0);
 
   useEffect(() => {
-    if (showFullImage) {
-      previewAnim.value = withTiming(1, { duration: 250 });
-    } else {
-      previewAnim.value = withTiming(0, { duration: 200 });
-    }
+    previewAnim.value = withTiming(showFullImage ? 1 : 0, { duration: showFullImage ? 250 : 200 });
   }, [showFullImage, previewAnim]);
 
   const openFullImage = () => setShowFullImage(true);
@@ -194,10 +169,9 @@ export default function ProfileScreen() {
             </Text>
           </View>
 
-          {/* Stats */}
+          {/* Stats - Using formatters with proper null handling */}
           <View className="flex-row justify-around border-t pt-6" style={{ borderColor: isDarkMode ? "#374151" : "#E5E7EB" }}>
             <View className="items-center">
-              {/* ✅ FIX: Pass string | null | undefined properly */}
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
                 {getYearsOfService(employee?.join_date)}
               </Text>
@@ -205,7 +179,6 @@ export default function ProfileScreen() {
             </View>
 
             <View className="items-center">
-              {/* ✅ FIX: Handle number | null | undefined */}
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
                 {employee?.leave_balance ?? 0}
               </Text>
@@ -232,7 +205,9 @@ export default function ProfileScreen() {
               <Mail size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Email</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.email)}</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>
+                  {formatValue(employee?.email)}
+                </Text>
               </View>
             </View>
 
@@ -240,7 +215,9 @@ export default function ProfileScreen() {
               <Phone size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Telepon</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.phone)}</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>
+                  {formatPhoneDisplay(employee?.phone)}
+                </Text>
               </View>
             </View>
 
@@ -248,7 +225,9 @@ export default function ProfileScreen() {
               <Building size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Departemen</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.department)}</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>
+                  {formatValue(employee?.department)}
+                </Text>
               </View>
             </View>
 
@@ -256,7 +235,9 @@ export default function ProfileScreen() {
               <Briefcase size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Role</Text>
-                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{getRoleLabel(employee?.role)}</Text>
+                <Text className={isDarkMode ? "text-white" : "text-gray-800"}>
+                  {getRoleLabel(employee?.role)}
+                </Text>
               </View>
             </View>
 
@@ -265,7 +246,7 @@ export default function ProfileScreen() {
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Tanggal Bergabung</Text>
                 <Text className={isDarkMode ? "text-white" : "text-gray-800"}>
-                  {employee?.join_date ? formatDateID(employee.join_date) : '-'}
+                  {formatDateID(employee?.join_date)}
                 </Text>
               </View>
             </View>
@@ -316,7 +297,7 @@ export default function ProfileScreen() {
           {history.length > 5 && (
             <TouchableOpacity
               className="mt-4 py-2"
-              onPress={() => router.push("/(modals)/leave-history" as any)}
+              onPress={() => router.push("/(modals)/leave-history" as never)}
             >
               <Text className="text-blue-500 text-center font-medium">
                 Lihat Semua Riwayat

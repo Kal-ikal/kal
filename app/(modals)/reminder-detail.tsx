@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "@/lib/supabase";
-import { formatDateID, formatDateFullID, calculateDays } from "@/utils/formatters";
+import { formatDateID, calculateDays } from "@/utils/formatters";
 import type { LeaveRequestFull } from "@/types/database";
 
 export default function ReminderDetail() {
@@ -218,14 +218,14 @@ export default function ReminderDetail() {
             <View className="flex-row">
               <Text className={`w-32 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Tanggal Mulai</Text>
               <Text className={`font-medium flex-1 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                {formatDateFullID(request.start_date)}
+                {formatDateID(request.start_date)}
               </Text>
             </View>
             
             <View className="flex-row">
               <Text className={`w-32 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Tanggal Selesai</Text>
               <Text className={`font-medium flex-1 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                {formatDateFullID(request.end_date)}
+                {formatDateID(request.end_date)}
               </Text>
             </View>
             

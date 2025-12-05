@@ -39,8 +39,8 @@ import { useTheme } from "@/context/ThemeContext";
 import { useAuth } from "@/context/AuthContext";
 import { useUserData, useLeaveTypes } from "@/hooks/useUserData";
 import { useTabBarStore } from "@/hooks/useTabBarStore";
-import { submitLeaveRequest, calculateWorkingDays } from "@/services/leaveService";
-import { formatDateFullID } from "@/utils/formatters";
+import { submitLeaveRequest} from "@/services/leaveService";
+import { formatDateID } from "@/utils/formatters";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import * as DocumentPicker from "expo-document-picker";
 import { LinearGradient } from "expo-linear-gradient";
@@ -55,7 +55,7 @@ export default function PengajuanScreen() {
   const insets = useSafeAreaInsets();
   const { isDarkMode } = useTheme();
   const { session } = useAuth();
-  const { employee, refetch, getLeaveBalanceUI } = useUserData();
+  const { refetch, getLeaveBalanceUI } = useUserData();
   const { leaveTypes, loading: loadingTypes } = useLeaveTypes();
 
   // ✅ NEW: Tab bar visibility control
@@ -336,7 +336,7 @@ export default function PengajuanScreen() {
                 <View className="flex-row items-center">
                   <Calendar color={isDarkMode ? "#9CA3AF" : "#6B7280"} size={20} />
                   <Text className={`ml-3 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                    {formatDateFullID(startDate.toISOString())}
+                    {formatDateID(startDate.toISOString())}
                   </Text>
                 </View>
                 <ChevronRight color={isDarkMode ? "#9CA3AF" : "#6B7280"} size={20} />
@@ -357,7 +357,7 @@ export default function PengajuanScreen() {
                 <View className="flex-row items-center">
                   <Calendar color={isDarkMode ? "#9CA3AF" : "#6B7280"} size={20} />
                   <Text className={`ml-3 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-                    {formatDateFullID(endDate.toISOString())}
+                    {formatDateID(endDate.toISOString())}
                   </Text>
                 </View>
                 <ChevronRight color={isDarkMode ? "#9CA3AF" : "#6B7280"} size={20} />
@@ -495,7 +495,7 @@ export default function PengajuanScreen() {
                 <View className="flex-row justify-between">
                   <Text className={`${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>Tanggal</Text>
                   <Text className={`${isDarkMode ? "text-white" : "text-gray-900"} font-medium`}>
-                    {formatDateFullID(startDate.toISOString())} - {formatDateFullID(endDate.toISOString())}
+                    {formatDateID(startDate.toISOString())} - {formatDateID(endDate.toISOString())}
                   </Text>
                 </View>
                 <View className="flex-row justify-between">
