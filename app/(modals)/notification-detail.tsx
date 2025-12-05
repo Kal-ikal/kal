@@ -36,8 +36,7 @@ export default function NotificationDetail() {
       
       const { data, error } = await supabase
         .from('leave_requests')
-        .select(`
-          *,
+        .select(`*,
           leave_types (*),
           profiles!leave_requests_user_id_fkey (*)
         `)

@@ -2,7 +2,7 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/app/(app)/profile.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ V5: All TypeScript warnings fixed, proper null handling
+// ✅ V8: Service Integration & Deprecation Fixes
 // ===========================================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -13,6 +13,9 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
+  Modal,
+  StyleSheet,
+  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import {
@@ -37,9 +40,13 @@ import Animated, {
   withSpring,
   useSharedValue,
 } from "react-native-reanimated";
+import { BlurView } from "expo-blur";
 import { useUserData } from "@/hooks/useUserData";
 import { useScrollHandler } from "@/hooks/useScrollHandler";
 import { useScrollToTop } from "@react-navigation/native";
+import { useAuth } from "@/context/AuthContext";
+// 👇 IMPORT SERVICE
+import { uploadUserProfilePhoto } from "@/services/profileService";
 import { 
   formatDateID, 
   getStatusLabel, 
@@ -59,28 +66,67 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const { isDarkMode } = useTheme();
   const { onScroll } = useScrollHandler();
+  const { user } = useAuth(); // Ambil user untuk ID
 
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
 
-  const { employee, history, loading } = useUserData();
+  // Ambil data user + fungsi refetch
+  const { employee, history, loading, refetch } = useUserData();
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [avatar, setAvatar] = useState(DEFAULT_AVATAR);
+  const [isUploading, setIsUploading] = useState(false); // Loading state saat upload
 
-  // Update avatar when employee data loads
+  // Update avatar lokal saat data employee berubah (misal setelah refetch)
   useEffect(() => {
     if (employee?.avatar_url) {
       setAvatar(employee.avatar_url);
     }
   }, [employee]);
 
+  // === HANDLER: Upload Foto via Service ===
+  const handleAvatarUpdate = async (uri: string) => {
+    // 1. Update UI dulu (Optimistic)
+    setAvatar(uri);
+    setShowEditModal(false);
+
+    if (!user?.id) return;
+
+    try {
+      setIsUploading(true);
+      
+      // 2. Panggil Service
+      const result = await uploadUserProfilePhoto(user.id, uri);
+
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+
+      // 3. Refresh data global agar persistent (tersimpan di database)
+      await refetch();
+      Alert.alert("Berhasil", "Foto profil berhasil diperbarui!");
+
+    } catch (error: any) {
+      console.error(error);
+      Alert.alert("Gagal", "Gagal mengunggah foto. Periksa koneksi Anda.");
+      // Rollback ke foto lama jika gagal
+      if (employee?.avatar_url) setAvatar(employee.avatar_url);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   // === Full Image Preview ===
   const [showFullImage, setShowFullImage] = useState(false);
   const previewAnim = useSharedValue(0);
 
   useEffect(() => {
-    previewAnim.value = withTiming(showFullImage ? 1 : 0, { duration: showFullImage ? 250 : 200 });
+    if (showFullImage) {
+      previewAnim.value = withTiming(1, { duration: 250 });
+    } else {
+      previewAnim.value = withTiming(0, { duration: 200 });
+    }
   }, [showFullImage, previewAnim]);
 
   const openFullImage = () => setShowFullImage(true);
@@ -89,8 +135,6 @@ export default function ProfileScreen() {
     previewAnim.value = withTiming(0, { duration: 200 });
     setTimeout(() => setShowFullImage(false), 200);
   };
-
-  const bgStyle = useAnimatedStyle(() => ({ opacity: previewAnim.value }));
 
   const imgStyle = useAnimatedStyle(() => ({
     opacity: previewAnim.value,
@@ -148,8 +192,13 @@ export default function ProfileScreen() {
             <TouchableOpacity
               className={`${isDarkMode ? "bg-blue-600" : "bg-blue-500"} rounded-full p-3`}
               onPress={() => setShowEditModal(true)}
+              disabled={isUploading}
             >
-              <Edit3 size={20} color="white" />
+              {isUploading ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Edit3 size={20} color="white" />
+              )}
             </TouchableOpacity>
           </View>
 
@@ -169,7 +218,7 @@ export default function ProfileScreen() {
             </Text>
           </View>
 
-          {/* Stats - Using formatters with proper null handling */}
+          {/* Stats */}
           <View className="flex-row justify-around border-t pt-6" style={{ borderColor: isDarkMode ? "#374151" : "#E5E7EB" }}>
             <View className="items-center">
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
@@ -308,51 +357,70 @@ export default function ProfileScreen() {
       </ScrollView>
 
       {/* Full Image Preview Modal */}
-      {showFullImage && (
-        <Animated.View
-          style={[
-            {
-              position: "absolute",
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: "rgba(0,0,0,0.9)",
-              justifyContent: "center",
-              alignItems: "center",
-              zIndex: 1000,
-            },
-            bgStyle,
-          ]}
+      <Modal
+        visible={showFullImage}
+        transparent={true}
+        onRequestClose={closeFullImage}
+        animationType="fade"
+        statusBarTranslucent
+      >
+        <BlurView
+          intensity={25}
+          tint={isDarkMode ? 'dark' : 'light'}
+          experimentalBlurMethod="dimezisBlurView"
+          style={StyleSheet.absoluteFill}
         >
-          <TouchableOpacity
-            style={{ position: "absolute", top: insets.top + 16, right: 16 }}
-            onPress={closeFullImage}
-          >
-            <X color="white" size={28} />
-          </TouchableOpacity>
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: isDarkMode ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.2)' }}>
+            <TouchableOpacity
+              style={{
+                position: "absolute",
+                top: insets.top + 20,
+                right: 20,
+                zIndex: 20,
+                backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                padding: 10,
+                borderRadius: 30,
+              }}
+              onPress={closeFullImage}
+            >
+              <X color={isDarkMode ? "white" : "black"} size={26} />
+            </TouchableOpacity>
 
-          <Animated.Image
-            source={{ uri: avatar }}
-            style={[
-              {
-                width: 300,
-                height: 300,
-                borderRadius: 150,
-              },
-              imgStyle,
-            ]}
-            resizeMode="cover"
-          />
-        </Animated.View>
-      )}
+            <Animated.View style={imgStyle}>
+              <Image
+                source={{ uri: avatar }}
+                style={{
+                  width: 300,
+                  height: 300,
+                  borderRadius: 150,
+                  borderWidth: 4,
+                  borderColor: isDarkMode ? 'white' : '#3B82F6',
+                }}
+                resizeMode="cover"
+              />
+              <Text style={{ 
+                color: isDarkMode ? 'white' : 'black', 
+                textAlign: 'center', 
+                marginTop: 24, 
+                fontSize: 20, 
+                fontWeight: '700',
+                textShadowColor: 'rgba(0, 0, 0, 0.2)',
+                textShadowOffset: { width: 0, height: 1 },
+                textShadowRadius: 4
+              }}>
+                {formatValue(employee?.full_name)}
+              </Text>
+            </Animated.View>
+          </View>
+        </BlurView>
+      </Modal>
 
-      {/* Edit Modal */}
+      {/* Edit Modal dengan handler baru */}
       <EditProfilePhotoModal
         visible={showEditModal}
         onClose={() => setShowEditModal(false)}
         currentAvatar={avatar}
-        onAvatarChange={setAvatar}
+        onAvatarChange={handleAvatarUpdate} 
         isDarkMode={isDarkMode}
       />
     </View>
