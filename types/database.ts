@@ -20,6 +20,7 @@ export type PayrollStatus = 'draft' | 'finalized';
 // ===========================================================
 
 export interface Profile {
+  address: string;
   id: string;
   email: string;
   full_name: string;

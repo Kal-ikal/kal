@@ -2,7 +2,7 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/app/(app)/konversi.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ V5: Uses master data, all TypeScript warnings fixed
+// ✅ V6: User can select how many days to convert (slider/stepper)
 // ===========================================================
 
 import React, { useState, useCallback, useRef, useMemo } from "react";
@@ -22,6 +22,8 @@ import {
   Calculator,
   CheckCircle,
   AlertTriangle,
+  Minus,
+  Plus,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { cssInterop } from "nativewind";
@@ -33,6 +35,8 @@ import { useUserData } from "@/hooks/useUserData";
 import { useScrollHandler } from "@/hooks/useScrollHandler";
 import { submitEncashmentRequest } from "@/services/leaveService";
 import { formatIDR, getLeaveTypeColor } from "@/utils/formatters";
+import { useToast } from "@/context/NotificationToastContext";
+import Slider from "@react-native-community/slider";
 
 cssInterop(LinearGradient, { className: "style" });
 
@@ -40,6 +44,7 @@ cssInterop(LinearGradient, { className: "style" });
 const ENCASHMENT_RATE_MULTIPLIER = 1 / 22;
 const TAX_RATE = 0.15;
 const MIN_KEEP_DAYS = 5;
+const MAX_CONVERT_PER_YEAR = 10;
 
 interface LeaveBalanceDisplay {
   id: string;
@@ -63,11 +68,15 @@ export default function LeaveConversionScreen() {
   const insets = useSafeAreaInsets();
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
-  const { employee, getLeaveBalanceArray, loading } = useUserData();
+  const { employee, getLeaveBalanceArray, loading, refetch } = useUserData();
   const { onScroll } = useScrollHandler();
+  const { showSuccess, showError, showWarning} = useToast();
 
   const [conversionRequested, setConversionRequested] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // ✅ NEW: State for selected days to convert
+  const [selectedDays, setSelectedDays] = useState(0);
 
   const scrollRef = useRef<ScrollView>(null);
 
@@ -75,6 +84,7 @@ export default function LeaveConversionScreen() {
   useFocusEffect(
     useCallback(() => {
       setConversionRequested(false);
+      setSelectedDays(0);
       scrollRef.current?.scrollTo({ y: 0, animated: false });
     }, [])
   );
@@ -87,7 +97,6 @@ export default function LeaveConversionScreen() {
     const dailyRate = (employee.basic_salary || 0) * ENCASHMENT_RATE_MULTIPLIER;
 
     return balanceArray.map((balance) => {
-      // Only quota deduction types can be converted
       const canConvert = balance.isQuotaDeduction;
       const eligibleDays = canConvert 
         ? Math.max(0, balance.remaining - MIN_KEEP_DAYS) 
@@ -106,6 +115,44 @@ export default function LeaveConversionScreen() {
     });
   }, [employee, getLeaveBalanceArray]);
 
+  // Total eligible days
+  const totalEligibleDays = useMemo(() => {
+    return Math.min(
+      leaveBalances.reduce((sum, leave) => sum + leave.eligible, 0),
+      MAX_CONVERT_PER_YEAR
+    );
+  }, [leaveBalances]);
+
+  // ✅ NEW: Initialize selectedDays when eligible days change
+  useMemo(() => {
+    if (selectedDays === 0 && totalEligibleDays > 0) {
+      setSelectedDays(totalEligibleDays);
+    }
+  }, [selectedDays, totalEligibleDays]);
+
+  // Daily rate
+  const dailyRate = useMemo(() => {
+    return employee?.basic_salary 
+      ? employee.basic_salary * ENCASHMENT_RATE_MULTIPLIER 
+      : 0;
+  }, [employee]);
+
+  // ✅ NEW: Calculations based on SELECTED days (not total eligible)
+  const calculations = useMemo(() => {
+    const daysToConvert = Math.min(selectedDays, totalEligibleDays);
+    const amountBeforeTax = daysToConvert * dailyRate;
+    const taxAmount = amountBeforeTax * TAX_RATE;
+    const netAmount = amountBeforeTax - taxAmount;
+
+    return {
+      daysToConvert,
+      amountBeforeTax,
+      taxAmount,
+      netAmount,
+      dailyRate,
+    };
+  }, [selectedDays, totalEligibleDays, dailyRate]);
+
   // Tax brackets
   const taxBrackets: TaxBracket[] = useMemo(() => [
     { min: 0, max: 60000000, rate: 5 },
@@ -117,57 +164,43 @@ export default function LeaveConversionScreen() {
   // Eligibility criteria
   const eligibilityCriteria = useMemo(() => [
     `Minimal menyisakan ${MIN_KEEP_DAYS} hari cuti tahunan`,
-    "Maksimal 10 hari dapat dikonversi per tahun kalender",
+    `Maksimal ${MAX_CONVERT_PER_YEAR} hari dapat dikonversi per tahun kalender`,
     "Request diproses dalam 5 hari kerja",
     "Hasil konversi akan ditambahkan ke gaji bulan berikutnya",
   ], []);
 
-  // Calculations
-  const calculations = useMemo(() => {
-    const totalEligibleDays = leaveBalances.reduce(
-      (sum, leave) => sum + leave.eligible,
-      0
-    );
+  // ✅ NEW: Increment/Decrement handlers
+  const incrementDays = useCallback(() => {
+    setSelectedDays(prev => Math.min(prev + 1, totalEligibleDays));
+  }, [totalEligibleDays]);
 
-    const totalAmountBeforeTax = leaveBalances.reduce(
-      (sum, leave) => sum + leave.eligible * leave.ratePerDay,
-      0
-    );
+  const decrementDays = useCallback(() => {
+    setSelectedDays(prev => Math.max(prev - 1, 1));
+  }, []);
 
-    const taxAmount = totalAmountBeforeTax * TAX_RATE;
-    const netAmount = totalAmountBeforeTax - taxAmount;
-
-    const dailyRate = employee?.basic_salary 
-      ? employee.basic_salary * ENCASHMENT_RATE_MULTIPLIER 
-      : 0;
-
-    return {
-      totalEligibleDays,
-      totalAmountBeforeTax,
-      taxAmount,
-      netAmount,
-      dailyRate,
-    };
-  }, [leaveBalances, employee]);
+  // Handle slider change
+  const handleSliderChange = useCallback((value: number) => {
+    setSelectedDays(Math.round(value));
+  }, []);
 
   // Handle conversion request
   const handleRequestConversion = useCallback(async () => {
-    if (calculations.totalEligibleDays <= 0) {
-      Alert.alert(
+    if (calculations.daysToConvert <= 0) {
+      showWarning(
         "Tidak Memenuhi Syarat",
-        `Anda tidak memiliki hari cuti yang dapat dikonversi. Minimal harus menyisakan ${MIN_KEEP_DAYS} hari cuti.`
+        `Minimal harus menyisakan ${MIN_KEEP_DAYS} hari cuti.`
       );
       return;
     }
 
     if (!user?.id || !employee) {
-      Alert.alert("Error", "Data pengguna tidak ditemukan. Silakan reload aplikasi.");
+      showError("Error", "Data pengguna tidak ditemukan. Silakan reload aplikasi.");
       return;
     }
 
     Alert.alert(
       "Konfirmasi Konversi Cuti",
-      `Anda akan mengkonversi ${calculations.totalEligibleDays} hari cuti dengan nilai bersih ${formatIDR(calculations.netAmount)}. Tindakan ini tidak dapat dibatalkan.`,
+      `Anda akan mengkonversi ${calculations.daysToConvert} hari cuti dengan nilai bersih ${formatIDR(calculations.netAmount)}.\n\nTindakan ini tidak dapat dibatalkan.`,
       [
         { text: "Batal", style: "cancel" },
         {
@@ -178,7 +211,7 @@ export default function LeaveConversionScreen() {
 
               const result = await submitEncashmentRequest({
                 userId: user.id,
-                daysToConvert: calculations.totalEligibleDays,
+                daysToConvert: calculations.daysToConvert,
                 amount: calculations.netAmount,
               });
 
@@ -187,15 +220,17 @@ export default function LeaveConversionScreen() {
               }
 
               setConversionRequested(true);
+              await refetch();
 
-              Alert.alert(
-                "Pengajuan Berhasil",
-                "Pengajuan konversi cuti Anda telah dikirim dan sedang menunggu persetujuan.",
-                [{ text: "OK", onPress: () => router.replace("/(app)/home") }]
-              );
+              showSuccess("Pengajuan Berhasil", "Pengajuan konversi cuti Anda sedang menunggu persetujuan.");
+
+              setTimeout(() => {
+                router.replace("/(app)/home");
+              }, 1500);
+
             } catch (e) {
               const message = e instanceof Error ? e.message : "Gagal mengajukan konversi";
-              Alert.alert("Error", message);
+              showError("Error", message);
             } finally {
               setIsSubmitting(false);
             }
@@ -203,7 +238,7 @@ export default function LeaveConversionScreen() {
         },
       ]
     );
-  }, [calculations, router, user, employee]);
+  }, [calculations, router, user, employee, refetch, showSuccess, showError, showWarning]);
 
   if (loading) {
     return (
@@ -247,7 +282,7 @@ export default function LeaveConversionScreen() {
         onScroll={onScroll}
         scrollEventThrottle={16}
       >
-        {/* Eligible Days - From Master Data */}
+        {/* Eligible Days Overview */}
         <View className={`${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-xl p-5 shadow-md mb-6`}>
           <View className="flex-row justify-between items-center mb-4">
             <Text className={`${isDarkMode ? "text-white" : "text-[#1A1D23]"} text-lg font-bold`}>
@@ -262,13 +297,12 @@ export default function LeaveConversionScreen() {
             </Text>
           ) : (
             <>
-              <View className="flex-row flex-wrap gap-3 mb-6">
+              <View className="flex-row flex-wrap gap-3 mb-4">
                 {leaveBalances.map((leave) => (
                   <View
                     key={leave.id}
                     className={`${isDarkMode ? "bg-gray-700" : "bg-gray-100"} rounded-lg p-4 flex-1 min-w-[45%]`}
                   >
-                    {/* Badge */}
                     <View className="flex-row items-center mb-1">
                       <View 
                         className="px-2 py-0.5 rounded"
@@ -278,22 +312,18 @@ export default function LeaveConversionScreen() {
                       </View>
                     </View>
                     
-                    {/* Type Name */}
                     <Text className={`${isDarkMode ? "text-gray-300" : "text-gray-600"} text-sm mb-1`}>
                       {leave.type}
                     </Text>
                     
-                    {/* Eligible Days */}
                     <Text className={`${isDarkMode ? "text-white" : "text-[#1A1D23]"} text-2xl font-bold`}>
                       {leave.eligible}
                     </Text>
                     
-                    {/* Used/Total */}
                     <Text className="text-gray-500 text-xs mt-1">
                       {leave.used} terpakai / {leave.days} total
                     </Text>
                     
-                    {/* Warning if can't convert */}
                     {!leave.isQuotaDeduction && (
                       <View className="flex-row items-center mt-2">
                         <AlertTriangle color="#F59E0B" size={12} style={{ marginRight: 4 }} />
@@ -309,10 +339,10 @@ export default function LeaveConversionScreen() {
               <View className={`${isDarkMode ? "bg-blue-900/30" : "bg-blue-50"} rounded-xl p-4`}>
                 <View className="flex-row justify-between">
                   <Text className={`${isDarkMode ? "text-blue-200" : "text-blue-800"} font-medium`}>
-                    Total Hari Eligible
+                    Total Eligible
                   </Text>
                   <Text className={`${isDarkMode ? "text-blue-200" : "text-blue-800"} font-bold text-lg`}>
-                    {calculations.totalEligibleDays} hari
+                    {totalEligibleDays} hari
                   </Text>
                 </View>
               </View>
@@ -320,7 +350,103 @@ export default function LeaveConversionScreen() {
           )}
         </View>
 
-        {/* Monetary Value */}
+        {/* ✅ NEW: Days Selector */}
+        {totalEligibleDays > 0 && (
+          <View className={`${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-xl p-5 shadow-md mb-6`}>
+            <View className="flex-row justify-between items-center mb-4">
+              <Text className={`${isDarkMode ? "text-white" : "text-[#1A1D23]"} text-lg font-bold`}>
+                Pilih Jumlah Hari
+              </Text>
+            </View>
+
+            {/* Stepper Controls */}
+            <View className="flex-row items-center justify-center mb-4">
+              <TouchableOpacity
+                onPress={decrementDays}
+                disabled={selectedDays <= 1}
+                className={`w-12 h-12 rounded-full items-center justify-center ${
+                  selectedDays <= 1 
+                    ? isDarkMode ? "bg-gray-700" : "bg-gray-200"
+                    : isDarkMode ? "bg-blue-600" : "bg-blue-500"
+                }`}
+              >
+                <Minus color={selectedDays <= 1 ? "#9CA3AF" : "white"} size={24} />
+              </TouchableOpacity>
+
+              <View className="mx-8 items-center">
+                <Text className={`text-5xl font-bold ${isDarkMode ? "text-white" : "text-[#1A1D23]"}`}>
+                  {selectedDays}
+                </Text>
+                <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                  hari
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={incrementDays}
+                disabled={selectedDays >= totalEligibleDays}
+                className={`w-12 h-12 rounded-full items-center justify-center ${
+                  selectedDays >= totalEligibleDays 
+                    ? isDarkMode ? "bg-gray-700" : "bg-gray-200"
+                    : isDarkMode ? "bg-blue-600" : "bg-blue-500"
+                }`}
+              >
+                <Plus color={selectedDays >= totalEligibleDays ? "#9CA3AF" : "white"} size={24} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Slider */}
+            {totalEligibleDays > 1 && (
+              <View className="px-2">
+                <Slider
+                  minimumValue={1}
+                  maximumValue={totalEligibleDays}
+                  step={1}
+                  value={selectedDays}
+                  onValueChange={handleSliderChange}
+                  minimumTrackTintColor="#3B82F6"
+                  maximumTrackTintColor={isDarkMode ? "#374151" : "#E5E7EB"}
+                  thumbTintColor="#3B82F6"
+                />
+                <View className="flex-row justify-between mt-1">
+                  <Text className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                    1 hari
+                  </Text>
+                  <Text className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                    {totalEligibleDays} hari
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Quick Select Buttons */}
+            {totalEligibleDays > 2 && (
+              <View className="flex-row justify-center gap-2 mt-4">
+                {[1, Math.ceil(totalEligibleDays / 2), totalEligibleDays].map((days) => (
+                  <TouchableOpacity
+                    key={days}
+                    onPress={() => setSelectedDays(days)}
+                    className={`px-4 py-2 rounded-full ${
+                      selectedDays === days
+                        ? "bg-blue-500"
+                        : isDarkMode ? "bg-gray-700" : "bg-gray-200"
+                    }`}
+                  >
+                    <Text className={`text-sm font-medium ${
+                      selectedDays === days
+                        ? "text-white"
+                        : isDarkMode ? "text-gray-300" : "text-gray-700"
+                    }`}>
+                      {days === totalEligibleDays ? "Semua" : `${days} hari`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Monetary Value - Updated to use selected days */}
         <View className={`${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-xl p-5 shadow-md mb-6`}>
           <View className="flex-row justify-between items-center mb-4">
             <Text className={`${isDarkMode ? "text-white" : "text-[#1A1D23]"} text-lg font-bold`}>
@@ -332,10 +458,19 @@ export default function LeaveConversionScreen() {
           <View className="mb-4">
             <View className={`flex-row justify-between py-3 border-b ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}>
               <Text className={`${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
+                Hari yang akan dikonversi
+              </Text>
+              <Text className={`${isDarkMode ? "text-white" : "text-[#1A1D23]"} font-bold`}>
+                {calculations.daysToConvert} hari
+              </Text>
+            </View>
+
+            <View className={`flex-row justify-between py-3 border-b ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}>
+              <Text className={`${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
                 Nilai Kotor
               </Text>
               <Text className={`${isDarkMode ? "text-white" : "text-[#1A1D23]"} font-medium`}>
-                {formatIDR(calculations.totalAmountBeforeTax)}
+                {formatIDR(calculations.amountBeforeTax)}
               </Text>
             </View>
 
@@ -352,7 +487,7 @@ export default function LeaveConversionScreen() {
               <Text className={`${isDarkMode ? "text-white" : "text-[#1A1D23]"} font-bold`}>
                 Nilai Bersih
               </Text>
-              <Text className={`${isDarkMode ? "text-white" : "text-[#1A1D23]"} font-bold text-lg`}>
+              <Text className={`${isDarkMode ? "text-white" : "text-[#1A1D23]"} font-bold text-xl`}>
                 {formatIDR(calculations.netAmount)}
               </Text>
             </View>
@@ -418,9 +553,9 @@ export default function LeaveConversionScreen() {
         {/* Submit Button */}
         <TouchableOpacity
           onPress={handleRequestConversion}
-          disabled={isSubmitting || conversionRequested || calculations.totalEligibleDays <= 0}
+          disabled={isSubmitting || conversionRequested || calculations.daysToConvert <= 0}
           className={`rounded-xl p-4 mb-6 ${
-            isSubmitting || conversionRequested || calculations.totalEligibleDays <= 0
+            isSubmitting || conversionRequested || calculations.daysToConvert <= 0
               ? "bg-gray-400"
               : "bg-blue-500"
           }`}
@@ -431,9 +566,9 @@ export default function LeaveConversionScreen() {
             <Text className="text-white text-center font-bold text-lg">
               {conversionRequested
                 ? "Pengajuan Terkirim"
-                : calculations.totalEligibleDays <= 0
+                : calculations.daysToConvert <= 0
                 ? "Tidak Ada Cuti Eligible"
-                : `Ajukan Konversi ${calculations.totalEligibleDays} Hari`}
+                : `Ajukan Konversi ${calculations.daysToConvert} Hari`}
             </Text>
           )}
         </TouchableOpacity>

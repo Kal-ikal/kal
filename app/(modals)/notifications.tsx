@@ -2,10 +2,10 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/app/(modals)/notifications.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ V5: Better contrast colors, all warnings fixed
+// ✅ V6: Fixed mark all as read, toast integration, better UX
 // ===========================================================
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -24,6 +24,7 @@ import {
   AlertCircle,
   Check,
   Trash2,
+  CheckCheck,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -31,6 +32,7 @@ import { useTheme } from "@/context/ThemeContext";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/context/AuthContext";
 import { formatRelativeTime } from "@/utils/formatters";
+import { useToast } from "@/context/NotificationToastContext";
 import type { Notification } from "@/types/database";
 
 type IconType = 'success' | 'error' | 'pending' | 'info';
@@ -68,10 +70,12 @@ export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const { isDarkMode } = useTheme();
   const { session } = useAuth();
+  const { showSuccess, showError, showInfo } = useToast();
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [markingAllRead, setMarkingAllRead] = useState(false);
 
   // Determine icon type based on content
   const getIconType = useCallback((title: string, message: string): IconType => {
@@ -172,54 +176,83 @@ export default function NotificationsScreen() {
     setRefreshing(false);
   }, [fetchNotifications]);
 
-  // Mark as read
+  // Mark single as read
   const markAsRead = useCallback(async (id: string) => {
     try {
-      await supabase
+      const { error } = await supabase
         .from('notifications')
         .update({ is_read: true })
         .eq('id', id);
 
+      if (error) throw error;
+
+      // ✅ FIX: Update local state immediately
       setNotifications(prev =>
         prev.map(n => (n.id === id ? { ...n, is_read: true } : n))
       );
     } catch (err) {
       console.error('Error marking as read:', err);
+      showError('Gagal', 'Tidak dapat menandai notifikasi');
     }
-  }, []);
+  }, [showError]);
 
-  // Mark all as read
+  // ✅ FIX: Mark all as read with proper feedback
   const markAllAsRead = useCallback(async () => {
     if (!session?.user?.id) return;
 
+    const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
+    if (unreadIds.length === 0) {
+      showInfo('Info', 'Semua notifikasi sudah dibaca');
+      return;
+    }
+
     try {
-      await supabase
+      setMarkingAllRead(true);
+
+      const { error } = await supabase
         .from('notifications')
         .update({ is_read: true })
         .eq('user_id', session.user.id)
         .eq('is_read', false);
 
+      if (error) throw error;
+
+      // ✅ FIX: Update ALL notifications to read in local state
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      
+      // Show success toast
+      showSuccess('Berhasil', `${unreadIds.length} notifikasi ditandai sudah dibaca`);
+
     } catch (err) {
       console.error('Error marking all as read:', err);
+      showError('Gagal', 'Tidak dapat menandai semua notifikasi');
+    } finally {
+      setMarkingAllRead(false);
     }
-  }, [session?.user?.id]);
+  }, [session?.user?.id, notifications, showSuccess, showError, showInfo]);
 
   // Delete notification
   const deleteNotification = useCallback(async (id: string) => {
     try {
-      await supabase
+      const { error } = await supabase
         .from('notifications')
         .delete()
         .eq('id', id);
 
+      if (error) throw error;
+
       setNotifications(prev => prev.filter(n => n.id !== id));
+      showSuccess('Berhasil', 'Notifikasi dihapus');
     } catch (err) {
       console.error('Error deleting notification:', err);
+      showError('Gagal', 'Tidak dapat menghapus notifikasi');
     }
-  }, []);
+  }, [showSuccess, showError]);
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  // Calculate unread count from local state
+  const unreadCount = useMemo(() => {
+    return notifications.filter(n => !n.is_read).length;
+  }, [notifications]);
 
   return (
     <View className={`flex-1 ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}>
@@ -249,10 +282,22 @@ export default function NotificationsScreen() {
             </View>
           </View>
 
+          {/* Mark All Button */}
           {unreadCount > 0 && (
-            <TouchableOpacity onPress={markAllAsRead} className="flex-row items-center">
-              <Check color="#3B82F6" size={16} />
-              <Text className="text-blue-500 text-sm ml-1">Tandai Semua</Text>
+            <TouchableOpacity 
+              onPress={markAllAsRead} 
+              disabled={markingAllRead}
+              className="flex-row items-center px-3 py-1.5 rounded-full bg-blue-50"
+              style={{ opacity: markingAllRead ? 0.6 : 1 }}
+            >
+              {markingAllRead ? (
+                <ActivityIndicator size="small" color="#3B82F6" style={{ marginRight: 4 }} />
+              ) : (
+                <CheckCheck color="#3B82F6" size={16} style={{ marginRight: 4 }} />
+              )}
+              <Text className="text-blue-600 text-sm font-medium">
+                {markingAllRead ? 'Memproses...' : 'Baca Semua'}
+              </Text>
             </TouchableOpacity>
           )}
         </View>
@@ -327,10 +372,20 @@ export default function NotificationsScreen() {
                     {notif.message}
                   </Text>
 
-                  {/* Timestamp */}
-                  <Text className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
-                    {formatRelativeTime(notif.created_at)}
-                  </Text>
+                  {/* Timestamp & Read Status */}
+                  <View className="flex-row items-center justify-between">
+                    <Text className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
+                      {formatRelativeTime(notif.created_at)}
+                    </Text>
+                    {notif.is_read && (
+                      <View className="flex-row items-center">
+                        <Check color="#9CA3AF" size={12} />
+                        <Text className={`text-xs ml-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                          Dibaca
+                        </Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
               </View>
 

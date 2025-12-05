@@ -7,6 +7,8 @@ import { useCustomBackHandler } from '../hooks/useCustomBackHandler';
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { AuthProvider } from "../context/AuthContext";
 import { AuthGuard } from "../components/AuthGuard";
+import { ToastProvider } from "../context/NotificationToastContext"; 
+
 import "./global.css";
 
 enableScreens(true);
@@ -14,7 +16,17 @@ enableFreeze(true);
 
 function NavigationBarConfig() { return null; }
 
-// Wrapper komponen untuk akses useTheme
+// Wrapper komponen baru untuk akses useTheme & Toast
+function ToastProviderWrapper({ children }: { children: React.ReactNode }) {
+  const { isDarkMode } = useTheme();
+  return (
+    <ToastProvider isDarkMode={isDarkMode}>
+      {children}
+    </ToastProvider>
+  );
+}
+
+// Wrapper komponen untuk akses useTheme (Navigasi Utama)
 function RootLayoutNav() {
   const { isDarkMode } = useTheme();
 
@@ -68,7 +80,10 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <AuthProvider>
           <ThemeProvider>
-            <RootLayoutNav />
+            {/* ToastProviderWrapper disisipkan di sini, di dalam ThemeProvider */}
+            <ToastProviderWrapper>
+              <RootLayoutNav />
+            </ToastProviderWrapper>
           </ThemeProvider>
         </AuthProvider>
       </SafeAreaProvider>

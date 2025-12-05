@@ -1,4 +1,9 @@
-// components/EditProfilePhotoModal.tsx
+// ===========================================================
+// 📁 Lokasi: components/EditProfilePhotoModal.tsx
+// 📝 Aksi: REPLACE file yang sudah ada
+// ✅ Menambahkan tombol "Hapus Foto"
+// ===========================================================
+
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -8,6 +13,7 @@ import {
   Image,
   StyleSheet,
   Modal,
+  Alert,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import Animated, {
@@ -17,13 +23,14 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import { BlurView } from "expo-blur";
-import { Camera, Image as ImageIcon, X } from "lucide-react-native";
+import { Camera, Image as ImageIcon, X, Trash2 } from "lucide-react-native";
 
 type Props = {
   visible: boolean;
   onClose: () => void;
-  currentAvatar: string;
+  currentAvatar: string | null;
   onAvatarChange: (uri: string) => void;
+  onDelete?: () => void; // Added onDelete prop
   isDarkMode: boolean;
 };
 
@@ -32,12 +39,12 @@ export default function EditProfilePhotoModal({
   onClose,
   currentAvatar,
   onAvatarChange,
+  onDelete,
   isDarkMode,
 }: Props) {
   const [profileImage, setProfileImage] = useState<string | null>(currentAvatar);
   const anim = useSharedValue(0);
 
-  // Efek animasi saat modal muncul/hilang
   useEffect(() => {
     if (visible) {
       setProfileImage(currentAvatar);
@@ -61,27 +68,10 @@ export default function EditProfilePhotoModal({
     transform: [{ scale: withSpring(anim.value ? 1 : 0.85) }],
   }));
 
-  async function ensureMediaLibPermission() {
-    const status = await ImagePicker.getMediaLibraryPermissionsAsync();
-    if (status.granted) return true;
-    const req = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    return req.granted;
-  }
-
-  async function ensureCameraPermission() {
-    const status = await ImagePicker.getCameraPermissionsAsync();
-    if (status.granted) return true;
-    const req = await ImagePicker.requestCameraPermissionsAsync();
-    return req.granted;
-  }
-
   const pickGallery = async () => {
     try {
-      const ok = await ensureMediaLibPermission();
-      if (!ok) return;
-
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: 'images', // ✅ FIX: Ganti Enum deprecated dengan string 'images'
+        mediaTypes: 'images',
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -97,9 +87,6 @@ export default function EditProfilePhotoModal({
 
   const openCamera = async () => {
     try {
-      const ok = await ensureCameraPermission();
-      if (!ok) return;
-
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [1, 1],
@@ -115,11 +102,28 @@ export default function EditProfilePhotoModal({
   };
 
   const handleSave = () => {
-    if (profileImage) {
+    if (profileImage && profileImage !== currentAvatar) {
       onAvatarChange(profileImage);
-      // Alert dihapus agar UX lebih cepat (karena sudah ada alert di parent) atau sesuaikan kebutuhan
       closeAnimated();
     }
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      "Hapus Foto",
+      "Apakah Anda yakin ingin menghapus foto profil?",
+      [
+        { text: "Batal", style: "cancel" },
+        {
+          text: "Hapus",
+          style: "destructive",
+          onPress: () => {
+             if (onDelete) onDelete();
+             closeAnimated();
+          }
+        }
+      ]
+    );
   };
 
   return (
@@ -131,19 +135,16 @@ export default function EditProfilePhotoModal({
       statusBarTranslucent
     >
       <View style={StyleSheet.absoluteFill}>
-        {/* BACKDROP dengan BLUR */}
         <Animated.View style={[StyleSheet.absoluteFill, backdropStyle]}>
           <Pressable style={{ flex: 1 }} onPress={closeAnimated}>
             <BlurView
               tint={isDarkMode ? "dark" : "light"}
               intensity={20}
-              experimentalBlurMethod="dimezisBlurView"
               style={{ flex: 1 }}
             />
           </Pressable>
         </Animated.View>
 
-        {/* POPUP */}
         <Animated.View
           style={[
             popupStyle,
@@ -162,7 +163,7 @@ export default function EditProfilePhotoModal({
             </TouchableOpacity>
 
             <Text style={[styles.title, { color: isDarkMode ? "#fff" : "#222" }]}>
-              Ganti Foto Profil
+              Ubah Foto Profil
             </Text>
 
             {profileImage ? (
@@ -170,9 +171,6 @@ export default function EditProfilePhotoModal({
             ) : (
               <View style={styles.placeholder}>
                 <ImageIcon size={32} color="#9CA3AF" />
-                <Text style={{ marginTop: 8, color: isDarkMode ? "#ccc" : "#666" }}>
-                  Belum ada foto
-                </Text>
               </View>
             )}
 
@@ -186,7 +184,13 @@ export default function EditProfilePhotoModal({
               <Text style={styles.actionText}>Pilih dari Galeri</Text>
             </TouchableOpacity>
 
-            {/* Tombol Simpan hanya muncul jika ada perubahan */}
+            {currentAvatar && onDelete && (
+               <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#FEE2E2' }]} onPress={handleDelete}>
+                <Trash2 size={20} color="#EF4444" />
+                <Text style={[styles.actionText, { color: '#EF4444' }]}>Hapus Foto Saat Ini</Text>
+              </TouchableOpacity>
+            )}
+
             {profileImage && profileImage !== currentAvatar && (
               <TouchableOpacity style={styles.saveBtn} onPress={handleSave}>
                 <Text style={styles.saveText}>Simpan Perubahan</Text>

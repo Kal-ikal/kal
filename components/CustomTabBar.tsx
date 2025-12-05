@@ -8,10 +8,8 @@
 import React, { useEffect } from "react";
 import {
   View,
-  Text,
   TouchableOpacity,
   StyleSheet,
-  Platform,
 } from "react-native";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import {
