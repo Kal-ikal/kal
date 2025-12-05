@@ -2,6 +2,7 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/app/(app)/konversi.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
+// ✅ FIXED V4: Uses master data from database for leave types
 // ===========================================================
 
 import React, { useState, useCallback, useRef, useMemo } from "react";
@@ -38,11 +39,14 @@ cssInterop(LinearGradient, { className: "style" });
 // TYPE DEFINITIONS
 // ===========================
 type LeaveBalanceDisplay = {
+  id: string;
   type: string;
+  code: string;
   days: number;
   used: number;
   eligible: number;
-  ratePerDay: number; // IDR per hari
+  ratePerDay: number;
+  isQuotaDeduction: boolean;
 };
 
 type TaxBracket = {
@@ -54,7 +58,6 @@ type TaxBracket = {
 // ===========================
 // CONSTANTS
 // ===========================
-// Rate konversi per hari berdasarkan gaji (akan dihitung dari basic_salary)
 const ENCASHMENT_RATE_MULTIPLIER = 1 / 22; // 1/22 dari gaji bulanan per hari
 const TAX_RATE = 0.15; // 15% pajak
 const MIN_KEEP_DAYS = 5; // Minimal hari yang harus disimpan
@@ -64,7 +67,8 @@ export default function LeaveConversionScreen() {
   const insets = useSafeAreaInsets();
   const { isDarkMode: isDark } = useTheme();
   const { user } = useAuth();
-  const { employee, getLeaveBalanceUI, loading } = useUserData();
+  // ✅ Uses master data via getLeaveBalanceArray
+  const { employee, getLeaveBalanceArray, loading } = useUserData();
   const { onScroll } = useScrollHandler();
 
   const [conversionRequested, setConversionRequested] = useState(false);
@@ -82,32 +86,35 @@ export default function LeaveConversionScreen() {
   );
 
   // ===========================
-  // COMPUTED DATA
+  // COMPUTED DATA FROM MASTER DATA
   // ===========================
 
-  // Calculate leave balances untuk konversi
   const leaveBalances: LeaveBalanceDisplay[] = useMemo(() => {
     if (!employee) return [];
 
-    const balanceUI = getLeaveBalanceUI();
+    // Get leave types from master data
+    const balanceArray = getLeaveBalanceArray();
     const dailyRate = (employee.basic_salary || 0) * ENCASHMENT_RATE_MULTIPLIER;
 
-    return balanceUI.map((balance) => {
-      // Hanya Annual Leave yang bisa dikonversi
-      const isAnnual = balance.type === "Annual";
-      const eligibleDays = isAnnual 
+    return balanceArray.map((balance) => {
+      // Only quota deduction types (CT/Cuti Tahunan) can be converted
+      const canConvert = balance.isQuotaDeduction;
+      const eligibleDays = canConvert 
         ? Math.max(0, balance.remaining - MIN_KEEP_DAYS) 
         : 0;
 
       return {
+        id: balance.id,
         type: balance.type,
+        code: balance.code,
         days: balance.total,
         used: balance.used,
         eligible: eligibleDays,
-        ratePerDay: isAnnual ? dailyRate : 0,
+        ratePerDay: canConvert ? dailyRate : 0,
+        isQuotaDeduction: balance.isQuotaDeduction,
       };
     });
-  }, [employee, getLeaveBalanceUI]);
+  }, [employee, getLeaveBalanceArray]);
 
   // Tax brackets (demo)
   const taxBrackets: TaxBracket[] = useMemo(
@@ -146,7 +153,6 @@ export default function LeaveConversionScreen() {
     const taxAmount = totalAmountBeforeTax * TAX_RATE;
     const netAmount = totalAmountBeforeTax - taxAmount;
 
-    // Daily rate untuk display
     const dailyRate = employee?.basic_salary 
       ? employee.basic_salary * ENCASHMENT_RATE_MULTIPLIER 
       : 0;
@@ -189,12 +195,10 @@ export default function LeaveConversionScreen() {
             try {
               setIsSubmitting(true);
 
-              // ✅ PERUBAHAN: Pakai service baru
               const result = await submitEncashmentRequest({
                 userId: user.id,
                 daysToConvert: calculations.totalEligibleDays,
-                userRole: employee.role,
-                managerId: employee.manager_id,
+                amount: calculations.netAmount,
               });
 
               if (!result.success) {
@@ -218,6 +222,14 @@ export default function LeaveConversionScreen() {
       ]
     );
   }, [calculations, router, user, employee]);
+
+  // ===========================
+  // HELPER: Get label for leave type
+  // ===========================
+  const getLeaveTypeLabel = (type: string, code: string): string => {
+    // Use the actual name from master data
+    return type;
+  };
 
   // ===========================
   // RENDER
@@ -265,7 +277,7 @@ export default function LeaveConversionScreen() {
         onScroll={onScroll}
         scrollEventThrottle={16}
       >
-        {/* Eligible Days */}
+        {/* Eligible Days - Now from Master Data */}
         <View className={`${isDark ? "bg-gray-800" : "bg-white"} rounded-xl p-5 shadow-md mb-6`}>
           <View className="flex-row justify-between items-center mb-4">
             <Text className={`${isDark ? "text-white" : "text-[#1A1D23]"} text-lg font-bold`}>
@@ -274,41 +286,65 @@ export default function LeaveConversionScreen() {
             <Info color={isDark ? "#9CA3AF" : "#6B7280"} size={20} />
           </View>
 
-          <View className="flex-row flex-wrap gap-4 mb-6">
-            {leaveBalances.map((leave, index) => (
-              <View
-                key={`${leave.type}-${index}`}
-                className={`${isDark ? "bg-gray-700" : "bg-gray-100"} rounded-lg p-4 flex-1 min-w-[45%]`}
-              >
-                <Text className={`${isDark ? "text-gray-300" : "text-gray-600"} text-sm mb-1`}>
-                  {leave.type === "Annual" ? "Cuti Tahunan" : leave.type === "Sick" ? "Cuti Sakit" : "Cuti Khusus"}
-                </Text>
-                <Text className={`${isDark ? "text-white" : "text-[#1A1D23]"} text-2xl font-bold`}>
-                  {leave.eligible}
-                </Text>
-                <Text className="text-gray-500 text-xs mt-1">
-                  {leave.used} terpakai / {leave.days} total
-                </Text>
-                {leave.type !== "Annual" && (
-                  <Text className="text-orange-500 text-xs mt-1">Tidak dapat dikonversi</Text>
-                )}
+          {leaveBalances.length === 0 ? (
+            <Text className={`text-center py-4 ${isDark ? "text-gray-400" : "text-gray-500"}`}>
+              Tidak ada data jenis cuti
+            </Text>
+          ) : (
+            <>
+              <View className="flex-row flex-wrap gap-3 mb-6">
+                {leaveBalances.map((leave) => (
+                  <View
+                    key={leave.id}
+                    className={`${isDark ? "bg-gray-700" : "bg-gray-100"} rounded-lg p-4 flex-1 min-w-[45%]`}
+                  >
+                    {/* Badge Code */}
+                    <View className="flex-row items-center mb-1">
+                      <View className={`px-2 py-0.5 rounded ${leave.isQuotaDeduction ? 'bg-blue-500' : 'bg-gray-500'}`}>
+                        <Text className="text-white text-xs font-bold">{leave.code}</Text>
+                      </View>
+                    </View>
+                    
+                    {/* Type Name */}
+                    <Text className={`${isDark ? "text-gray-300" : "text-gray-600"} text-sm mb-1`}>
+                      {getLeaveTypeLabel(leave.type, leave.code)}
+                    </Text>
+                    
+                    {/* Eligible Days */}
+                    <Text className={`${isDark ? "text-white" : "text-[#1A1D23]"} text-2xl font-bold`}>
+                      {leave.eligible}
+                    </Text>
+                    
+                    {/* Used/Total */}
+                    <Text className="text-gray-500 text-xs mt-1">
+                      {leave.used} terpakai / {leave.days} total
+                    </Text>
+                    
+                    {/* Can't convert badge */}
+                    {!leave.isQuotaDeduction && (
+                      <Text className="text-orange-500 text-xs mt-1 font-medium">
+                        Tidak dapat dikonversi
+                      </Text>
+                    )}
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
 
-          <View className={`${isDark ? "bg-blue-900/30" : "bg-blue-50"} rounded-xl p-4`}>
-            <View className="flex-row justify-between">
-              <Text className={`${isDark ? "text-blue-200" : "text-blue-800"} font-medium`}>
-                Total Hari Eligible
-              </Text>
-              <Text className={`${isDark ? "text-blue-200" : "text-blue-800"} font-bold text-lg`}>
-                {calculations.totalEligibleDays} hari
-              </Text>
-            </View>
-          </View>
+              <View className={`${isDark ? "bg-blue-900/30" : "bg-blue-50"} rounded-xl p-4`}>
+                <View className="flex-row justify-between">
+                  <Text className={`${isDark ? "text-blue-200" : "text-blue-800"} font-medium`}>
+                    Total Hari Eligible
+                  </Text>
+                  <Text className={`${isDark ? "text-blue-200" : "text-blue-800"} font-bold text-lg`}>
+                    {calculations.totalEligibleDays} hari
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
         </View>
 
-        {/* Monetary Value - PAKAI IDR */}
+        {/* Monetary Value */}
         <View className={`${isDark ? "bg-gray-800" : "bg-white"} rounded-xl p-5 shadow-md mb-6`}>
           <View className="flex-row justify-between items-center mb-4">
             <Text className={`${isDark ? "text-white" : "text-[#1A1D23]"} text-lg font-bold`}>
@@ -367,67 +403,63 @@ export default function LeaveConversionScreen() {
             <Calculator color={isDark ? "#9CA3AF" : "#6B7280"} size={20} />
           </View>
 
-          <Text className={`${isDark ? "text-gray-300" : "text-gray-600"} mb-4`}>
-            Potongan pajak dihitung berdasarkan bracket pajak penghasilan. Konversi cuti dianggap sebagai penghasilan tambahan.
-          </Text>
-
-          <Text className={`${isDark ? "text-white" : "text-[#1A1D23]"} font-medium mb-3`}>
-            Bracket Pajak Anda: 15%
-          </Text>
-
-          <View className={`${isDark ? "bg-gray-700" : "bg-gray-100"} rounded-lg p-4`}>
-            <Text className={`${isDark ? "text-gray-300" : "text-gray-600"} text-sm mb-2`}>
-              Bracket Pajak Penghasilan
-            </Text>
-            {taxBrackets.map((bracket, index) => (
-              <View key={`tax-${index}`} className="flex-row justify-between py-2">
-                <Text className={`${isDark ? "text-gray-400" : "text-gray-500"} text-sm`}>
-                  {formatIDR(bracket.min)} - {typeof bracket.max === 'number' ? formatIDR(bracket.max) : bracket.max}
-                </Text>
-                <Text className={`${isDark ? "text-gray-400" : "text-gray-500"} text-sm`}>
-                  {bracket.rate}%
-                </Text>
-              </View>
-            ))}
-          </View>
+          {taxBrackets.map((bracket, index) => (
+            <View
+              key={index}
+              className={`flex-row justify-between py-2 ${
+                index !== taxBrackets.length - 1 ? "border-b" : ""
+              } ${isDark ? "border-gray-700" : "border-gray-200"}`}
+            >
+              <Text className={`${isDark ? "text-gray-300" : "text-gray-600"} text-sm`}>
+                {formatIDR(bracket.min)} - {typeof bracket.max === "number" ? formatIDR(bracket.max) : bracket.max}
+              </Text>
+              <Text className={`${isDark ? "text-white" : "text-[#1A1D23]"} font-medium`}>
+                {bracket.rate}%
+              </Text>
+            </View>
+          ))}
         </View>
 
-        {/* Eligibility */}
+        {/* Eligibility Criteria */}
         <View className={`${isDark ? "bg-gray-800" : "bg-white"} rounded-xl p-5 shadow-md mb-6`}>
-          <Text className={`${isDark ? "text-white" : "text-[#1A1D23]"} text-lg font-bold mb-4`}>
-            Kriteria Kelayakan
-          </Text>
-
-          <View className="space-y-3">
-            {eligibilityCriteria.map((text, i) => (
-              <View key={`criteria-${i}`} className="flex-row items-start mb-3">
-                <CheckCircle
-                  color={isDark ? "#10B981" : "#059669"}
-                  size={20}
-                  style={{ marginTop: 2 }}
-                />
-                <Text className={`${isDark ? "text-gray-300" : "text-gray-600"} ml-3 flex-1`}>
-                  {text}
-                </Text>
-              </View>
-            ))}
+          <View className="flex-row justify-between items-center mb-4">
+            <Text className={`${isDark ? "text-white" : "text-[#1A1D23]"} text-lg font-bold`}>
+              Syarat dan Ketentuan
+            </Text>
+            <Info color={isDark ? "#9CA3AF" : "#6B7280"} size={20} />
           </View>
+
+          {eligibilityCriteria.map((criteria, index) => (
+            <View key={index} className="flex-row items-start mb-3">
+              <CheckCircle color={isDark ? "#10B981" : "#059669"} size={16} style={{ marginTop: 2, marginRight: 12 }} />
+              <Text className={`${isDark ? "text-gray-300" : "text-gray-600"} flex-1`}>
+                {criteria}
+              </Text>
+            </View>
+          ))}
         </View>
 
-        {/* Button */}
+        {/* Submit Button */}
         <TouchableOpacity
-          className={`rounded-xl p-4 mb-6 ${
-            conversionRequested ? "bg-green-500" : "bg-blue-500"
-          } shadow-md ${isSubmitting ? "opacity-50" : ""}`}
           onPress={handleRequestConversion}
-          disabled={conversionRequested || isSubmitting}
-          activeOpacity={0.7}
+          disabled={isSubmitting || conversionRequested || calculations.totalEligibleDays <= 0}
+          className={`rounded-xl p-4 mb-6 ${
+            isSubmitting || conversionRequested || calculations.totalEligibleDays <= 0
+              ? "bg-gray-400"
+              : isDark
+              ? "bg-blue-600"
+              : "bg-blue-500"
+          }`}
         >
           {isSubmitting ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
+            <ActivityIndicator color="white" />
           ) : (
             <Text className="text-white text-center font-bold text-lg">
-              {conversionRequested ? "Pengajuan Terkirim" : "Ajukan Konversi"}
+              {conversionRequested
+                ? "Pengajuan Terkirim"
+                : calculations.totalEligibleDays <= 0
+                ? "Tidak Ada Cuti Eligible"
+                : `Ajukan Konversi ${calculations.totalEligibleDays} Hari`}
             </Text>
           )}
         </TouchableOpacity>

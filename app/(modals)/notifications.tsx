@@ -1,8 +1,8 @@
 // ===========================================================
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/app/(modals)/notifications.tsx
-// 📝 Aksi: REPLACE file yang sudah ada (dari hardcoded ke real data)
-// ✅ NEW: Menggunakan data dari Supabase dengan realtime subscription
+// 📝 Aksi: REPLACE file yang sudah ada
+// ✅ FIXED V4: Better contrast colors for readability
 // ===========================================================
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -25,7 +25,6 @@ import {
   Check,
   Trash2,
 } from "lucide-react-native";
-import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useTheme } from "@/context/ThemeContext";
@@ -34,8 +33,10 @@ import { useAuth } from "@/context/AuthContext";
 import { formatRelativeTime } from "@/utils/formatters";
 import type { Notification } from "@/types/database";
 
+type IconType = 'success' | 'error' | 'pending' | 'info';
+
 interface NotificationItem extends Notification {
-  icon: 'success' | 'error' | 'pending' | 'info';
+  icon: IconType;
 }
 
 export default function NotificationsScreen() {
@@ -80,46 +81,60 @@ export default function NotificationsScreen() {
   }, [session?.user?.id]);
 
   // Determine icon type based on title/message content
-  const getIconType = (title: string, message: string): 'success' | 'error' | 'pending' | 'info' => {
+  const getIconType = (title: string, message: string): IconType => {
     const content = `${title} ${message}`.toLowerCase();
     
-    if (content.includes('disetujui') || content.includes('approved') || content.includes('✅')) {
+    if (content.includes('disetujui') || content.includes('approved') || content.includes('✅') || content.includes('berhasil')) {
       return 'success';
     }
-    if (content.includes('ditolak') || content.includes('rejected') || content.includes('❌')) {
+    if (content.includes('ditolak') || content.includes('rejected') || content.includes('❌') || content.includes('gagal')) {
       return 'error';
     }
-    if (content.includes('pending') || content.includes('menunggu') || content.includes('proses')) {
+    if (content.includes('pending') || content.includes('menunggu') || content.includes('proses') || content.includes('review')) {
       return 'pending';
     }
     return 'info';
   };
 
-  // Get icon component based on type
-  const getIcon = (type: 'success' | 'error' | 'pending' | 'info') => {
+  // ✅ FIX: Get icon component with DARKER colors for better contrast
+  const getIcon = (type: IconType) => {
     switch (type) {
       case 'success':
-        return <CheckCircle color="#10B981" size={24} />;
+        return <CheckCircle color="#059669" size={24} />; // Darker green
       case 'error':
-        return <XCircle color="#EF4444" size={24} />;
+        return <XCircle color="#DC2626" size={24} />; // Darker red
       case 'pending':
-        return <Clock color="#F59E0B" size={24} />;
+        return <Clock color="#D97706" size={24} />; // Darker orange
       default:
-        return <AlertCircle color="#3B82F6" size={24} />;
+        return <AlertCircle color="#2563EB" size={24} />; // Darker blue
     }
   };
 
-  // Get icon background color
-  const getIconBgColor = (type: 'success' | 'error' | 'pending' | 'info') => {
+  // ✅ FIX: Get icon background with BETTER contrast
+  const getIconBgColor = (type: IconType): string => {
     switch (type) {
       case 'success':
-        return isDarkMode ? 'bg-green-900/30' : 'bg-green-100';
+        return isDarkMode ? 'bg-green-900/50' : 'bg-green-100';
       case 'error':
-        return isDarkMode ? 'bg-red-900/30' : 'bg-red-100';
+        return isDarkMode ? 'bg-red-900/50' : 'bg-red-100';
       case 'pending':
-        return isDarkMode ? 'bg-yellow-900/30' : 'bg-yellow-100';
+        return isDarkMode ? 'bg-amber-900/50' : 'bg-amber-100';
       default:
-        return isDarkMode ? 'bg-blue-900/30' : 'bg-blue-100';
+        return isDarkMode ? 'bg-blue-900/50' : 'bg-blue-100';
+    }
+  };
+
+  // ✅ NEW: Get accent color for unread indicator
+  const getAccentColor = (type: IconType): string => {
+    switch (type) {
+      case 'success':
+        return '#059669'; // green-600
+      case 'error':
+        return '#DC2626'; // red-600
+      case 'pending':
+        return '#D97706'; // amber-600
+      default:
+        return '#2563EB'; // blue-600
     }
   };
 
@@ -142,9 +157,7 @@ export default function NotificationsScreen() {
           table: 'notifications',
           filter: `user_id=eq.${session.user.id}`,
         },
-        (payload) => {
-          console.log('Notification change:', payload);
-          // Refetch on any change
+        () => {
           fetchNotifications();
         }
       )
@@ -258,7 +271,7 @@ export default function NotificationsScreen() {
 
       {/* Content */}
       <ScrollView
-        className="flex-1 px-6 py-4"
+        className="flex-1 px-4 py-4"
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -290,31 +303,35 @@ export default function NotificationsScreen() {
                     ? "bg-gray-800"
                     : "bg-white"
                   : isDarkMode
-                  ? "bg-gray-800 border-l-4 border-blue-500"
-                  : "bg-blue-50 border-l-4 border-blue-500"
+                  ? "bg-gray-800"
+                  : "bg-white"
               }`}
+              style={
+                !notif.is_read
+                  ? { borderLeftWidth: 4, borderLeftColor: getAccentColor(notif.icon) }
+                  : undefined
+              }
               onPress={() => {
                 if (!notif.is_read) markAsRead(notif.id);
-                // Navigate to detail if needed
-                // router.push({ pathname: '/(modals)/notification-detail', params: { id: notif.id } });
               }}
               activeOpacity={0.7}
             >
               <View className="flex-row">
+                {/* ✅ FIX: Icon with better background contrast */}
                 <View
-                  className={`w-12 h-12 rounded-full items-center justify-center mr-4 ${getIconBgColor(
-                    notif.icon
-                  )}`}
+                  className={`w-12 h-12 rounded-full items-center justify-center mr-4 ${getIconBgColor(notif.icon)}`}
                 >
                   {getIcon(notif.icon)}
                 </View>
 
                 <View className="flex-1">
                   <View className="flex-row items-start justify-between mb-1">
+                    {/* ✅ FIX: Title with proper text color */}
                     <Text
                       className={`font-semibold flex-1 mr-2 ${
                         isDarkMode ? "text-white" : "text-gray-900"
                       }`}
+                      numberOfLines={2}
                     >
                       {notif.title}
                     </Text>
@@ -322,22 +339,24 @@ export default function NotificationsScreen() {
                       onPress={() => deleteNotification(notif.id)}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
-                      <Trash2 color="#9CA3AF" size={16} />
+                      <Trash2 color={isDarkMode ? "#6B7280" : "#9CA3AF"} size={16} />
                     </TouchableOpacity>
                   </View>
 
+                  {/* ✅ FIX: Message with better readable color */}
                   <Text
                     className={`text-sm mb-2 ${
-                      isDarkMode ? "text-gray-300" : "text-gray-600"
+                      isDarkMode ? "text-gray-300" : "text-gray-700"
                     }`}
-                    numberOfLines={2}
+                    numberOfLines={3}
                   >
                     {notif.message}
                   </Text>
 
+                  {/* ✅ FIX: Timestamp with visible color */}
                   <Text
                     className={`text-xs ${
-                      isDarkMode ? "text-gray-500" : "text-gray-400"
+                      isDarkMode ? "text-gray-500" : "text-gray-500"
                     }`}
                   >
                     {formatRelativeTime(notif.created_at)}
@@ -345,9 +364,12 @@ export default function NotificationsScreen() {
                 </View>
               </View>
 
-              {/* Unread indicator dot */}
+              {/* Unread badge */}
               {!notif.is_read && (
-                <View className="absolute top-4 right-4 w-2 h-2 bg-blue-500 rounded-full" />
+                <View 
+                  className="absolute top-3 right-3 w-3 h-3 rounded-full"
+                  style={{ backgroundColor: getAccentColor(notif.icon) }}
+                />
               )}
             </TouchableOpacity>
           ))

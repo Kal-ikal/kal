@@ -1,3 +1,10 @@
+// ===========================================================
+// 📱 FRONT-END EXPO
+// 📁 Lokasi: annualbenefit/components/CustomTabBar.tsx
+// 📝 Aksi: REPLACE file yang sudah ada
+// ✅ FIXED V3: Auto-hide on pengajuan page
+// ===========================================================
+
 import React, { useEffect } from "react";
 import {
   View,
@@ -41,6 +48,9 @@ const TABS = [
   { name: "settings", icon: Settings, label: "Settings" },
 ];
 
+// ✅ NEW: Pages where tab bar should auto-hide
+const AUTO_HIDE_PAGES = ["pengajuan"];
+
 const PRIMARY_COLOR = "#130057"; // Deep Navy
 const ACTIVE_BG_COLOR = "#FFFFFF"; // White
 const ACTIVE_ICON_COLOR = "#130057"; // Deep Navy
@@ -53,9 +63,24 @@ export default function CustomTabBar({
 }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const isVisible = useTabBarStore((state) => state.isVisible);
+  const setIsVisible = useTabBarStore((state) => state.setIsVisible);
+
+  // Get current route name
+  const currentRouteName = state.routes[state.index]?.name;
 
   // Shared Value for visibility animation (Y-axis translation)
   const translateY = useSharedValue(0);
+
+  // ✅ NEW: Auto-hide tab bar on specific pages
+  useEffect(() => {
+    if (AUTO_HIDE_PAGES.includes(currentRouteName)) {
+      // Auto-hide on pengajuan page
+      setIsVisible(false);
+    } else {
+      // Show on other pages
+      setIsVisible(true);
+    }
+  }, [currentRouteName, setIsVisible]);
 
   // React to visibility changes
   useEffect(() => {

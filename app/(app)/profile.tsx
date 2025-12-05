@@ -2,6 +2,7 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/app/(app)/profile.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
+// ✅ FIXED V4: Handle null for join_date and leave_balance
 // ===========================================================
 
 import React, { useState, useEffect, useRef } from "react";
@@ -11,7 +12,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  StyleSheet,
   ActivityIndicator,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -20,7 +20,6 @@ import {
   Calendar,
   Phone,
   Mail,
-  MapPin,
   Building,
   ChevronLeft,
   X,
@@ -45,18 +44,32 @@ import { formatDateID, getStatusLabel, getStatusColor } from "@/utils/formatters
 
 cssInterop(LinearGradient, { className: "style" });
 
-// Helper for empty state
-const formatValue = (value: string | number | null | undefined) => {
+// Helper for empty state - handles null, undefined, empty string
+const formatValue = (value: string | number | null | undefined): string => {
   if (value === null || value === undefined || value === "") return "-";
   return String(value);
 };
 
-// ✅ PERUBAHAN: Mapping role ke label yang lebih readable
-const getRoleLabel = (role: string | undefined) => {
+// ✅ FIX: Handle null | undefined for join_date
+const getYearsOfService = (joinDate: string | null | undefined): string => {
+  if (!joinDate) return "-";
+  try {
+    const start = new Date(joinDate);
+    const now = new Date();
+    const diff = now.getTime() - start.getTime();
+    const years = diff / (1000 * 60 * 60 * 24 * 365.25);
+    return years.toFixed(1);
+  } catch {
+    return "-";
+  }
+};
+
+// Mapping role ke label yang lebih readable
+const getRoleLabel = (role: string | null | undefined): string => {
   switch (role) {
     case 'employee': return 'Karyawan';
     case 'manager': return 'Manager';
-    case 'dfd': return 'DFD';
+    case 'dfd': return 'DFD (Direktur)';
     case 'hrd': return 'HRD';
     default: return role || '-';
   }
@@ -71,7 +84,6 @@ export default function ProfileScreen() {
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
 
-  // ✅ PERUBAHAN: Pakai hook baru
   const { employee, history, loading } = useUserData();
 
   const [showEditModal, setShowEditModal] = useState(false);
@@ -83,16 +95,6 @@ export default function ProfileScreen() {
       setAvatar(employee.avatar_url);
     }
   }, [employee]);
-
-  // Calculate years of service
-  const getYearsOfService = (joinDate: string | undefined) => {
-    if (!joinDate) return "-";
-    const start = new Date(joinDate);
-    const now = new Date();
-    const diff = now.getTime() - start.getTime();
-    const years = diff / (1000 * 60 * 60 * 24 * 365.25);
-    return years.toFixed(1);
-  };
 
   // === Full Image Preview ===
   const [showFullImage, setShowFullImage] = useState(false);
@@ -145,9 +147,9 @@ export default function ProfileScreen() {
             <ChevronLeft color="white" size={24} />
           </TouchableOpacity>
           <View className="flex-1">
-            <Text className="text-white text-xl font-bold">My Profile</Text>
+            <Text className="text-white text-xl font-bold">Profil Saya</Text>
             <Text className="text-blue-100 text-sm mt-1">
-              Personal information and leave history
+              Informasi personal dan riwayat cuti
             </Text>
           </View>
         </View>
@@ -166,7 +168,7 @@ export default function ProfileScreen() {
         <View className={`${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-2xl p-6 mb-6 shadow-md`}>
           <View className="flex-row items-center justify-between mb-6">
             <Text className={`text-2xl font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
-              My Profile
+              Profil
             </Text>
             <TouchableOpacity
               className={`${isDarkMode ? "bg-blue-600" : "bg-blue-500"} rounded-full p-3`}
@@ -187,7 +189,6 @@ export default function ProfileScreen() {
             <Text className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
               {formatValue(employee?.full_name)}
             </Text>
-            {/* ✅ PERUBAHAN: Tampilkan role bukan position */}
             <Text className={`${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
               {getRoleLabel(employee?.role)}
             </Text>
@@ -196,6 +197,7 @@ export default function ProfileScreen() {
           {/* Stats */}
           <View className="flex-row justify-around border-t pt-6" style={{ borderColor: isDarkMode ? "#374151" : "#E5E7EB" }}>
             <View className="items-center">
+              {/* ✅ FIX: Pass string | null | undefined properly */}
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
                 {getYearsOfService(employee?.join_date)}
               </Text>
@@ -203,8 +205,9 @@ export default function ProfileScreen() {
             </View>
 
             <View className="items-center">
+              {/* ✅ FIX: Handle number | null | undefined */}
               <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
-                {formatValue(employee?.leave_balance)}
+                {employee?.leave_balance ?? 0}
               </Text>
               <Text className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>Sisa Cuti</Text>
             </View>
@@ -225,7 +228,7 @@ export default function ProfileScreen() {
           </Text>
 
           <View className="space-y-4">
-            <View className="flex-row items-center">
+            <View className="flex-row items-center mb-3">
               <Mail size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Email</Text>
@@ -233,16 +236,15 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <View className="flex-row items-center">
+            <View className="flex-row items-center mb-3">
               <Phone size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Telepon</Text>
-                {/* ✅ PERUBAHAN: Pakai phone bukan phone_number */}
                 <Text className={isDarkMode ? "text-white" : "text-gray-800"}>{formatValue(employee?.phone)}</Text>
               </View>
             </View>
 
-            <View className="flex-row items-center">
+            <View className="flex-row items-center mb-3">
               <Building size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Departemen</Text>
@@ -250,7 +252,7 @@ export default function ProfileScreen() {
               </View>
             </View>
 
-            <View className="flex-row items-center">
+            <View className="flex-row items-center mb-3">
               <Briefcase size={20} color="#3B82F6" style={{ marginRight: 12 }} />
               <View>
                 <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>Role</Text>
@@ -271,90 +273,107 @@ export default function ProfileScreen() {
         </View>
 
         {/* Leave History */}
-        <View className={`${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-2xl p-6 shadow-md`}>
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className={`text-lg font-bold ${isDarkMode ? "text-white" : "text-gray-800"}`}>
-              Riwayat Cuti
+        <View className={`${isDarkMode ? "bg-gray-800" : "bg-white"} rounded-2xl p-6 mb-6 shadow-md`}>
+          <Text className={`text-lg font-bold mb-4 ${isDarkMode ? "text-white" : "text-gray-800"}`}>
+            Riwayat Cuti Terbaru
+          </Text>
+
+          {history.length === 0 ? (
+            <Text className={`text-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+              Belum ada riwayat cuti
             </Text>
-            <TouchableOpacity onPress={() => router.push('/(modals)/leave-history')}>
-              <Text className="text-blue-500 font-medium">Lihat Semua</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View className="space-y-4">
-            {history.slice(0, 5).map((leave, index) => {
-              // ✅ PERUBAHAN: Ambil nama leave type dari relasi
-              const leaveTypeName = leave.leave_types?.name || 'Cuti';
-              const statusLabel = getStatusLabel(leave.status);
-              const statusColors = getStatusColor(leave.status);
-
+          ) : (
+            history.slice(0, 5).map((item) => {
+              const statusColors = getStatusColor(item.status);
               return (
-                <View 
-                  key={leave.id} 
-                  className={`flex-row justify-between items-center pb-4 ${index !== Math.min(history.length, 5) - 1 ? "border-b" : ""}`} 
-                  style={{ borderColor: isDarkMode ? "#374151" : "#E5E7EB" }}
+                <View
+                  key={item.id}
+                  className={`flex-row items-center justify-between py-3 border-b ${
+                    isDarkMode ? "border-gray-700" : "border-gray-200"
+                  }`}
                 >
-                  <View>
+                  <View className="flex-1">
                     <Text className={`font-medium ${isDarkMode ? "text-white" : "text-gray-800"}`}>
-                      {leaveTypeName}
+                      {item.leave_types?.name || 'Cuti'}
                     </Text>
                     <Text className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                      {formatDateID(leave.start_date)} - {formatDateID(leave.end_date)}
+                      {formatDateID(item.start_date)} - {formatDateID(item.end_date)}
                     </Text>
                   </View>
-
                   <View 
                     className="px-3 py-1 rounded-full"
                     style={{ backgroundColor: statusColors.bg }}
                   >
-                    <Text className="text-xs font-medium" style={{ color: statusColors.text }}>
-                      {statusLabel}
+                    <Text style={{ color: statusColors.text }} className="text-xs font-medium">
+                      {getStatusLabel(item.status)}
                     </Text>
                   </View>
                 </View>
               );
-            })}
-            {history.length === 0 && (
-              <Text className={`text-center py-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Belum ada riwayat cuti
+            })
+          )}
+
+          {history.length > 5 && (
+            <TouchableOpacity
+              className="mt-4 py-2"
+              onPress={() => router.push("/(modals)/leave-history" as any)}
+            >
+              <Text className="text-blue-500 text-center font-medium">
+                Lihat Semua Riwayat
               </Text>
-            )}
-          </View>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
 
-      {/* === Edit Photo Modal === */}
-      {showEditModal && (
-        <EditProfilePhotoModal
-          onClose={() => setShowEditModal(false)}
-          onSave={(uri) => {
-            if (uri) setAvatar(uri);
-            setShowEditModal(false);
-          }}
-        />
-      )}
-
-      {/* === FULL IMAGE PREVIEW MODAL === */}
+      {/* Full Image Preview Modal */}
       {showFullImage && (
-        <View style={StyleSheet.absoluteFillObject}>
-          <Animated.View style={[StyleSheet.absoluteFillObject, bgStyle]} />
-          <TouchableOpacity style={StyleSheet.absoluteFillObject} onPress={closeFullImage} />
-
+        <Animated.View
+          style={[
+            {
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.9)",
+              justifyContent: "center",
+              alignItems: "center",
+              zIndex: 1000,
+            },
+            bgStyle,
+          ]}
+        >
           <TouchableOpacity
+            style={{ position: "absolute", top: insets.top + 16, right: 16 }}
             onPress={closeFullImage}
-            style={{ position: "absolute", top: insets.top + 20, right: 20, zIndex: 20 }}
           >
-            <X size={32} color={isDarkMode ? "white" : "black"} />
+            <X color="white" size={28} />
           </TouchableOpacity>
 
-          <Animated.View style={[imgStyle, { alignSelf: "center", justifyContent: "center", alignItems: "center", flex: 1 }]}>
-            <Image
-              source={{ uri: avatar }}
-              style={{ width: "95%", height: "75%", resizeMode: "contain", borderRadius: 20 }}
-            />
-          </Animated.View>
-        </View>
+          <Animated.Image
+            source={{ uri: avatar }}
+            style={[
+              {
+                width: 300,
+                height: 300,
+                borderRadius: 150,
+              },
+              imgStyle,
+            ]}
+            resizeMode="cover"
+          />
+        </Animated.View>
       )}
+
+      {/* Edit Modal */}
+      <EditProfilePhotoModal
+        visible={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        currentAvatar={avatar}
+        onAvatarChange={setAvatar}
+        isDarkMode={isDarkMode}
+      />
     </View>
   );
 }
