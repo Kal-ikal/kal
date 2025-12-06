@@ -84,10 +84,10 @@ const getToastColors = (type: ToastType) => {
 
 // Single Toast Component
 function Toast({
-  toast,
+  toastData,
   onDismiss,
 }: {
-  toast: ToastData;
+  toastData: ToastData;
   onDismiss: (id: string) => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -95,11 +95,11 @@ function Toast({
   const scale = useSharedValue(0.8);
   const translateY = useSharedValue(20);
 
-  const colors = getToastColors(toast.type);
+  const colors = getToastColors(toastData.type);
 
   // Calculate position
   const getToastPosition = () => {
-    if (!toast.position) {
+    if (!toastData.position) {
       // Default: top center
       return {
         top: insets.top + 60,
@@ -107,7 +107,7 @@ function Toast({
       };
     }
 
-    const { y } = toast.position;
+    const { y } = toastData.position;
     const TOAST_HEIGHT = 80;
     const PADDING = 20;
 
@@ -143,9 +143,9 @@ function Toast({
     scale.value = withTiming(0.8, { duration: 150 });
     translateY.value = withTiming(-20, { duration: 150 }, () => {
       // runOnJS is deprecated; use setTimeout to bridge to JS
-      setTimeout(() => onDismiss(toast.id), 0);
+      setTimeout(() => onDismiss(toastData.id), 0);
     });
-  }, [opacity, scale, translateY, onDismiss, toast.id]);
+  }, [opacity, scale, translateY, onDismiss, toastData.id]);
 
   // Animate in
   React.useEffect(() => {
@@ -211,7 +211,7 @@ function Toast({
             marginRight: 12,
           }}
         >
-          {getToastIcon(toast.type)}
+          {getToastIcon(toastData.type)}
         </View>
 
         {/* Content */}
@@ -224,9 +224,9 @@ function Toast({
             }}
             numberOfLines={1}
           >
-            {toast.title}
+            {toastData.title}
           </Text>
-          {toast.message && (
+          {toastData.message && (
             <Text
               style={{
                 color: "rgba(255,255,255,0.9)",
@@ -235,7 +235,7 @@ function Toast({
               }}
               numberOfLines={2}
             >
-              {toast.message}
+              {toastData.message}
             </Text>
           )}
         </View>
@@ -336,8 +336,8 @@ export function NotificationToastProvider({ children }: { children: React.ReactN
       {children}
       
       {/* Toast Container */}
-      {toasts.map((toast) => (
-        <Toast key={toast.id} toast={toast} onDismiss={removeToast} />
+      {toasts.map((item) => (
+        <Toast key={item.id} toastData={item} onDismiss={removeToast} />
       ))}
     </ToastContext.Provider>
   );
