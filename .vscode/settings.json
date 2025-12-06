@@ -1,4 +1,13 @@
 {
+  // Disable audio cues globally in this workspace
+  "audioCues.enabled": "off",
+
+  // Disable terminal bell in this workspace
+  "terminal.integrated.enableBell": false,
+
+  // Some terminals or extensions may still use system sounds; keep terminal bell duration minimal
+  "terminal.integrated.bellDuration": 0
+}{
   "editor.codeActionsOnSave": {
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit",
