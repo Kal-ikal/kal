@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // ===========================================================
 // 📁 Lokasi: annualbenefit/app/(app)/settings.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
@@ -27,7 +28,6 @@ import {
   Sun,
   Moon,
   LogOut,
-  Mail,
   Calendar,
   Clock,
   Key,

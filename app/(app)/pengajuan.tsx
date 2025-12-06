@@ -23,7 +23,6 @@ import {
   Check,
   Upload,
   X,
-  AlertCircle,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { cssInterop } from "nativewind";
@@ -61,7 +60,7 @@ export default function PengajuanScreen() {
   const insets = useSafeAreaInsets();
   const { isDarkMode } = useTheme();
   const { session } = useAuth();
-  const { profile, getLeaveBalanceUI, refetch } = useUserData();
+  const { getLeaveBalanceUI, refetch } = useUserData();
   
   // ✅ FIX: Menggunakan Selector Zustand
   const setIsVisible = useTabBarStore((state) => state.setIsVisible);

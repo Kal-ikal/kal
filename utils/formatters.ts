@@ -71,27 +71,20 @@ export function formatDateISO(date: Date | string | null | undefined): string {
 /**
  * Format relative time (e.g., "2 jam yang lalu", "kemarin")
  */
-export function formatRelativeTime(date: string | null | undefined): string {
-  if (!date) return '-';
-  
+export function formatRelativeTime(dateString: string): string {
   try {
-    const d = new Date(date);
-    if (isNaN(d.getTime())) return '-';
-    
+    const date = new Date(dateString);
     const now = new Date();
-    const diffMs = now.getTime() - d.getTime();
+    const diffMs = now.getTime() - date.getTime();
     const diffMins = Math.floor(diffMs / 60000);
     const diffHours = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
-    
+
     if (diffMins < 1) return 'Baru saja';
-    if (diffMins < 60) return `${diffMins} menit yang lalu`;
-    if (diffHours < 24) return `${diffHours} jam yang lalu`;
-    if (diffDays === 1) return 'Kemarin';
-    if (diffDays < 7) return `${diffDays} hari yang lalu`;
-    if (diffDays < 30) return `${Math.floor(diffDays / 7)} minggu yang lalu`;
-    
-    return formatDateShort(date);
+    if (diffMins < 60) return `${diffMins} menit lalu`;
+    if (diffHours < 24) return `${diffHours} jam lalu`;
+    if (diffDays < 7) return `${diffDays} hari lalu`;
+    return formatDateID(dateString);
   } catch {
     return '-';
   }
