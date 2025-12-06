@@ -8,9 +8,31 @@
     "scheme": "anb",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#EFF6FF"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
-      "jsEngine": "hermes"
+      "jsEngine": "hermes",
+      "bundleIdentifier": "com.tecnodev.annualbenefit",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to let you take profile pictures and upload documents.",
+        "NSPhotoLibraryUsageDescription": "This app accesses your photo library to let you choose profile pictures and upload documents.",
+        "NSPhotoLibraryAddUsageDescription": "This app saves photos to your library after you take them.",
+        "NSMicrophoneUsageDescription": "This app does not use the microphone.",
+        "NSLocationWhenInUseUsageDescription": "This app uses your location for attendance check-in features.",
+        "NSFaceIDUsageDescription": "This app uses Face ID to secure your login and protect your data.",
+        "NSUserTrackingUsageDescription": "This data will be used to provide you a better and personalized experience."
+      },
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "jsEngine": "hermes",
@@ -22,11 +44,30 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.anb"
+      "package": "com.tecnodev.annualbenefit",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "NOTIFICATIONS",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "blockedPermissions": [
+        "RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
       "expo-router",
@@ -38,6 +79,7 @@
           "resizeMode": "contain",
           "backgroundColor": "#EFF6FF",
           "dark": {
+            "image": "./assets/images/splash-icon.png",
             "backgroundColor": "#000000"
           }
         }
@@ -48,8 +90,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "The app accesses your photos to let you upload a profile picture.",
-          "cameraPermission": "The app accesses your camera to let you take a profile picture."
+          "photosPermission": "Allow Annual & Benefit to access your photos to upload profile pictures and documents.",
+          "cameraPermission": "Allow Annual & Benefit to access your camera to take photos for profile pictures and documents."
         }
       ],
       [
@@ -61,11 +103,42 @@
           "androidMode": "default",
           "androidCollapsedTitle": "Annual & Benefit"
         }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Annual & Benefit to use Face ID for secure login and data protection."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Annual & Benefit to use your location for attendance check-in features.",
+          "locationAlwaysPermission": "Allow Annual & Benefit to use your location for attendance check-in features.",
+          "locationWhenInUsePermission": "Allow Annual & Benefit to use your location for attendance check-in features.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isAndroidForegroundServiceEnabled": false
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "PASTE_YOUR_PROJECT_ID_HERE"
+      }
+    },
+    "owner": "tecnodev",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/PASTE_YOUR_PROJECT_ID_HERE"
     }
   }
 }
