@@ -7,7 +7,8 @@ import { useCustomBackHandler } from '../hooks/useCustomBackHandler';
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { AuthProvider } from "../context/AuthContext";
 import { AuthGuard } from "../components/AuthGuard";
-import { ToastProvider } from "../context/NotificationToastContext"; 
+import { ToastProvider } from "../context/NotificationToastContext";
+import { usePushNotifications } from '../hooks/usePushNotifications'; 
 
 import "./global.css";
 
@@ -29,6 +30,9 @@ function ToastProviderWrapper({ children }: { children: React.ReactNode }) {
 // Wrapper komponen untuk akses useTheme (Navigasi Utama)
 function RootLayoutNav() {
   const { isDarkMode } = useTheme();
+
+  // Initialize push notifications
+  usePushNotifications();
 
   return (
     <>

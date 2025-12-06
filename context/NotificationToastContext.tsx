@@ -63,19 +63,19 @@ const toastConfig = {
 };
 
 // Single Toast Component
-function ToastItem({ 
-  toast, 
+function ToastItem({
+  toastData,
   onHide,
   isDarkMode = false,
-}: { 
-  toast: Toast; 
+}: {
+  toastData: Toast;
   onHide: (id: string) => void;
   isDarkMode?: boolean;
 }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-20)).current;
-  
-  const { icon: Icon, color, bgColor, darkBgColor } = toastConfig[toast.type];
+
+  const { icon: Icon, color, bgColor, darkBgColor } = toastConfig[toastData.type];
 
   useEffect(() => {
     // Animate in
@@ -96,7 +96,7 @@ function ToastItem({
     // Auto hide
     const timer = setTimeout(() => {
       hideWithAnimation();
-    }, toast.duration || 3000);
+    }, toastData.duration || 3000);
 
     return () => clearTimeout(timer);
   }, []);
@@ -114,7 +114,7 @@ function ToastItem({
         useNativeDriver: true,
       }),
     ]).start(() => {
-      onHide(toast.id);
+      onHide(toastData.id);
     });
   };
 
@@ -146,20 +146,20 @@ function ToastItem({
           <Icon color={color} size={24} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={{ 
-            fontWeight: '600', 
-            color: isDarkMode ? '#F9FAFB' : '#1F2937', 
-            fontSize: 14 
+          <Text style={{
+            fontWeight: '600',
+            color: isDarkMode ? '#F9FAFB' : '#1F2937',
+            fontSize: 14
           }}>
-            {toast.title}
+            {toastData.title}
           </Text>
-          {toast.description && (
-            <Text style={{ 
-              color: isDarkMode ? '#9CA3AF' : '#6B7280', 
-              fontSize: 12, 
-              marginTop: 2 
+          {toastData.description && (
+            <Text style={{
+              color: isDarkMode ? '#9CA3AF' : '#6B7280',
+              fontSize: 12,
+              marginTop: 2
             }}>
-              {toast.description}
+              {toastData.description}
             </Text>
           )}
         </View>
@@ -196,10 +196,10 @@ function ToastContainer({
       }}
       pointerEvents="box-none"
     >
-      {toasts.map((toast) => (
-        <ToastItem 
-          key={toast.id} 
-          toast={toast} 
+      {toasts.map((item) => (
+        <ToastItem
+          key={item.id}
+          toastData={item}
           onHide={onHide}
           isDarkMode={isDarkMode}
         />
