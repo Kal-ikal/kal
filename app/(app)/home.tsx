@@ -2,8 +2,8 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/app/(app)/home.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ V9: Recent Events = notifications + activity_logs (approval chain filtered)
-//        Max 3 events, with date & time display
+// ✅ V10: Fixed scroll behavior (like settings.tsx)
+//         Recent Events = notifications + activity_logs (max 3)
 // ===========================================================
 
 import { useAuth } from "@/context/AuthContext";
@@ -15,7 +15,7 @@ import {
   formatDateShort,
   getLeaveTypeColor,
   getStatusColor,
-  getStatusLabel
+  getStatusLabel,
 } from "@/utils/formatters";
 import { useScrollToTop } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -33,26 +33,23 @@ import {
   Plus,
   Repeat,
   TrendingUp,
-  XCircle
+  XCircle,
 } from "lucide-react-native";
 import { cssInterop } from "nativewind";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Dimensions,
   Image,
   RefreshControl,
   ScrollView,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 cssInterop(LinearGradient, { className: "style" });
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-void SCREEN_WIDTH;
 const DEFAULT_AVATAR = "https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=900&auto=format&fit=crop&q=60";
 
 // Helper function for greeting
@@ -93,9 +90,11 @@ export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isDarkMode } = useTheme();
-  const { onScroll } = useScrollHandler();
   const { session } = useAuth();
-
+  
+  // ✅ FIX: Use scroll handler like settings.tsx
+  const { onScroll } = useScrollHandler();
+  
   const scrollRef = useRef<ScrollView>(null);
   useScrollToTop(scrollRef);
 
@@ -120,8 +119,6 @@ export default function HomeScreen() {
     try {
       // 1. Get user's manager info for approval chain filtering
       let managerEmail: string | null = null;
-      let managerName: string | null = null;
-      void managerName;
       
       if (employee.manager_id) {
         const { data: managerData } = await supabase
@@ -132,7 +129,6 @@ export default function HomeScreen() {
         
         if (managerData) {
           managerEmail = managerData.email;
-          managerName = managerData.full_name;
         }
       }
 
@@ -175,17 +171,6 @@ export default function HomeScreen() {
       }
 
       // 3. Fetch activity_logs filtered by approval chain
-      // - Activities that mention current user's name (actions done to their requests)
-      // - Activities done by their manager (approval actions from manager)
-      
-      let activityQuery = supabase
-        .from('activity_logs')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(10);
-      void activityQuery;
-
-      // Build OR filter for activity logs
       const filters: string[] = [];
       
       // Filter: description contains user's name (actions mentioning this user)
@@ -224,7 +209,6 @@ export default function HomeScreen() {
               type = 'pending';
             }
 
-            // Format title from action_type
             let title = 'Aktivitas Sistem';
             if (actionType.includes('APPROVE')) {
               title = 'Pengajuan Diproses';
@@ -241,25 +225,24 @@ export default function HomeScreen() {
               type,
               dateTime: formatEventDateTime(log.created_at),
               rawDate: new Date(log.created_at),
-              isRead: true, // Activity logs are always "read"
+              isRead: true,
               source: 'activity_log',
             });
           });
         }
       }
 
-      // 4. Sort all events by date (newest first) and deduplicate by similar content
+      // 4. Sort all events by date (newest first) and deduplicate
       const sortedEvents = events
         .sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime())
         .filter((event, index, self) => {
-          // Remove duplicates with very similar content within 1 minute
           return index === self.findIndex(e => 
             Math.abs(e.rawDate.getTime() - event.rawDate.getTime()) < 60000 &&
             e.type === event.type &&
             e.message.substring(0, 30) === event.message.substring(0, 30)
           );
         })
-        .slice(0, 3); // Take only top 3
+        .slice(0, 3); // Max 3
 
       setRecentEvents(sortedEvents);
     } catch (error) {
@@ -436,7 +419,7 @@ export default function HomeScreen() {
         </View>
       </LinearGradient>
 
-      {/* Scrollable Content */}
+      {/* Scrollable Content - ✅ FIX: Add onScroll handler */}
       <ScrollView
         ref={scrollRef}
         className="flex-1 -mt-4"

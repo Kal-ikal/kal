@@ -91,8 +91,7 @@ export default function LogoutModal({
                   isDarkMode ? 'text-gray-300' : 'text-gray-600'
                 }`}
               >
-                Are you sure you want to logout? You&apos;ll need to sign in again to
-                access your account.
+                Kamu yakin untuk keluar? Kamu perlu masuk kembali untuk mengakses akunmu.
               </Text>
             </View>
 
@@ -119,7 +118,7 @@ export default function LogoutModal({
                 }}
               >
                 <Text className="text-white text-center font-bold text-lg">
-                  Yes, Logout
+                  Ya, Keluar
                 </Text>
               </TouchableOpacity>
 
@@ -138,7 +137,7 @@ export default function LogoutModal({
                     isDarkMode ? 'text-gray-200' : 'text-gray-700'
                   }`}
                 >
-                  Cancel
+                  Batal
                 </Text>
               </TouchableOpacity>
             </View>
