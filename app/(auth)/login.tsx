@@ -1,262 +1,361 @@
-import React, { useState, useRef, useEffect } from "react";
+// ===========================================================
+// 📱 FRONT-END EXPO
+// 📁 Lokasi: annualbenefit/app/(auth)/login.tsx
+// 📝 Aksi: REPLACE file yang sudah ada
+// ✅ Phase 4: Biometric login + 2FA enforcement
+// ===========================================================
+
+import { useAuth } from "@/context/AuthContext";
+import { useToast } from "@/context/NotificationToastContext";
+import { supabase } from "@/lib/supabase";
 import {
-  View,
+  authenticateWithBiometric,
+  enableBiometric,
+  getBiometricLabel,
+  getBiometricStatus,
+} from "@/services/biometricService";
+import { LinearGradient } from "expo-linear-gradient";
+import { useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { Eye, EyeOff, Fingerprint, Lock, Mail, X } from "lucide-react-native";
+import { cssInterop } from "nativewind";
+import { useCallback, useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Animated,
-  Easing,
-  BackHandler,
-  Keyboard,
+  View,
 } from "react-native";
-import { useSmartNavigation } from '../../hooks/useSmartNavigation';
-import { useAuth } from '../../context/AuthContext';
-import {
-  Eye,
-  EyeOff,
-  Lock,
-  Mail,
-  CheckCircle,
-  XCircle,
-} from "lucide-react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { cssInterop } from "nativewind";
-import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// Enable Tailwind for components
 cssInterop(LinearGradient, { className: "style" });
-cssInterop(Mail, { className: "style" });
-cssInterop(Lock, { className: "style" });
-cssInterop(Eye, { className: "style" });
-cssInterop(EyeOff, { className: "style" });
-cssInterop(CheckCircle, { className: "style" });
-cssInterop(XCircle, { className: "style" });
 
 export default function LoginScreen() {
-  const { navigateToDetail, backToRoot } = useSmartNavigation();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { signIn } = useAuth();
+  void signIn;
+  const { showSuccess, showError, showInfo } = useToast();
+
+  // Form state
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [alert, setAlert] = useState<{ type: "success" | "error" | null; message: string }>({
-    type: null,
-    message: "",
-  });
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Animations
-  const eyeAnim = useRef(new Animated.Value(1)).current;
-  const alertAnim = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(1)).current; // Opacity screen
+  // Biometric state
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const [biometricType, setBiometricType] = useState<'fingerprint' | 'facial' | 'iris' | 'none'>('none');
 
-  // Back handler
+  // 2FA state
+  const [show2FAModal, setShow2FAModal] = useState(false);
+  const [totpCode, setTotpCode] = useState("");
+  const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
+  const [verifying2FA, setVerifying2FA] = useState(false);
+
+  // Check biometric status on mount
   useEffect(() => {
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-      backToRoot();
-      return true;
-    });
-    return () => backHandler.remove();
-  }, [backToRoot]);
+    const checkBiometric = async () => {
+      const status = await getBiometricStatus();
+      setBiometricAvailable(status.isAvailable);
+      setBiometricEnabled(status.isEnabled);
+      setBiometricType(status.biometricType);
+    };
+    checkBiometric();
+  }, []);
 
-  const animateEye = () => {
-    Animated.sequence([
-      Animated.timing(eyeAnim, { toValue: 0, duration: 100, useNativeDriver: true, easing: Easing.out(Easing.circle) }),
-      Animated.timing(eyeAnim, { toValue: 1, duration: 200, useNativeDriver: true, easing: Easing.out(Easing.circle) }),
-    ]).start();
-  };
-
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {};
-    if (!email.trim()) newErrors.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Email is invalid";
-    if (!password) newErrors.password = "Password is required";
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const showAlert = (type: "success" | "error", message: string) => {
-    setAlert({ type, message });
-    alertAnim.setValue(0);
-    Animated.timing(alertAnim, {
-      toValue: 1,
-      duration: 400,
-      easing: Easing.out(Easing.exp),
-      useNativeDriver: true,
-    }).start();
-
-    if (type === "error") {
-      setTimeout(() => {
-        Animated.timing(alertAnim, {
-          toValue: 0,
-          duration: 300,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }).start(() => setAlert({ type: null, message: "" }));
-      }, 3500);
-    }
-  };
-
-  const handleLogin = async () => {
-    Keyboard.dismiss(); // Tutup keyboard biar transisi mulus
-    if (validateForm()) {
-      setIsLoading(true); // Mulai loading state button
-      
-      try {
-        await signIn(email, password);
-        
-        // --- LOGIKA BARU ---
-        // 1. Tampilkan notif sukses sebentar
-        showAlert("success", "Login successful!");
-        
-        // 2. JANGAN navigate manual router.replace() disini!
-        // AuthGuard di Root Layout akan mendeteksi session change
-        // dan otomatis menutup layar ini dengan Loading Screen cantiknya.
-        
-      } catch (error: any) {
-        setIsLoading(false); // Stop loading jika error
-        
-        // --- PERBAIKAN PESAN ERROR ---
-        let errorMessage = error.message;
-        
-        // Cek pesan error dari Supabase dan ganti kalimatnya
-        if (
-          errorMessage.includes("Invalid login credentials") || 
-          errorMessage.includes("invalid_grant")
-        ) {
-          errorMessage = "Incorrect email or password";
-        }
-        
-        showAlert("error", errorMessage);
+  // Complete login and navigate
+  const completeLogin = useCallback(async (loginEmail: string, loginPassword: string) => {
+    try {
+      // Check if biometric should be enabled
+      if (biometricAvailable && !biometricEnabled) {
+        // Offer to enable biometric for next time
+        await enableBiometric(loginEmail, loginPassword);
+        showInfo("Biometrik", `${getBiometricLabel(biometricType)} diaktifkan untuk login berikutnya`);
       }
-    } else {
-      showAlert("error", "Please fill in all fields correctly.");
-    }
-  };
 
-  const handleForgotPassword = () => navigateToDetail('/(auth)/forgot-password');
+      showSuccess("Berhasil", "Login berhasil!");
+      router.replace("/(app)/home");
+    } catch (error) {
+      console.error("Complete login error:", error);
+    } finally {
+      setLoading(false);
+    }
+  }, [biometricAvailable, biometricEnabled, biometricType, showInfo, showSuccess, router]);
+
+  // Handle regular login
+  const handleLogin = useCallback(async (loginEmail?: string, loginPassword?: string) => {
+    const emailToUse = loginEmail || email;
+    const passwordToUse = loginPassword || password;
+
+    if (!emailToUse || !passwordToUse) {
+      showError("Error", "Email dan password harus diisi");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Attempt sign in
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: emailToUse,
+        password: passwordToUse,
+      });
+      void data;
+
+      if (error) throw error;
+
+      // Check if 2FA is required
+      const { data: factorsData } = await supabase.auth.mfa.listFactors();
+      const verifiedFactors = factorsData?.totp?.filter(f => f.status === 'verified') || [];
+
+      if (verifiedFactors.length > 0) {
+        // 2FA is enabled, need to verify
+        setMfaFactorId(verifiedFactors[0].id);
+        setShow2FAModal(true);
+        setLoading(false);
+        return;
+      }
+
+      // No 2FA, proceed with login
+      await completeLogin(emailToUse, passwordToUse);
+    } catch (error: any) {
+      console.error("Login error:", error);
+      showError("Login Gagal", error.message || "Email atau password salah");
+      setLoading(false);
+    }
+  }, [email, password, showError, completeLogin]);
+
+  // Handle biometric login
+  const handleBiometricLogin = useCallback(async () => {
+    if (!biometricEnabled) {
+      showInfo("Info", "Login biometrik belum diaktifkan");
+      return;
+    }
+
+    const result = await authenticateWithBiometric();
+    
+    if (!result.success) {
+      if (result.error !== 'Dibatalkan') {
+        showError("Gagal", result.error || "Autentikasi biometrik gagal");
+      }
+      return;
+    }
+
+    if (result.credentials) {
+      setEmail(result.credentials.email);
+      setPassword(result.credentials.password);
+      // Auto-submit
+      handleLogin(result.credentials.email, result.credentials.password);
+    }
+  }, [biometricEnabled, showError, showInfo, handleLogin]);
+
+  // Handle 2FA verification
+  const handle2FAVerify = useCallback(async () => {
+    if (!mfaFactorId || totpCode.length !== 6) {
+      return;
+    }
+
+    setVerifying2FA(true);
+
+    try {
+      // Create challenge and verify TOTP code
+      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: mfaFactorId,
+      });
+
+      if (challengeError) throw challengeError;
+
+      // Verify the challenge
+      const { error: verifyError } = await supabase.auth.mfa.verify({
+        factorId: mfaFactorId,
+        challengeId: challengeData?.id || '',
+        code: totpCode,
+      });
+
+      if (verifyError) throw verifyError;
+
+      // 2FA verified, complete login
+      setShow2FAModal(false);
+      await completeLogin(email, password);
+    } catch (error: any) {
+      console.error("2FA verify error:", error);
+      showError("Gagal", "Kode verifikasi salah");
+    } finally {
+      setVerifying2FA(false);
+    }
+  }, [totpCode, mfaFactorId, email, password, showError, completeLogin]);
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1, backgroundColor: '#EFF6FF' }}>
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
+    <View className="flex-1 bg-white">
+      <StatusBar style="dark" />
+
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
-        <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-          <LinearGradient colors={["#3B82F6", "#60A5FA"]} className="flex-1 px-6 pt-16 pb-10">
-            
-            {/* Header */}
-            <View className="mb-16">
-              <View className="flex-row items-center mb-8">
-                <TouchableOpacity onPress={backToRoot} className="bg-white/20 p-3 rounded-full mr-4">
-                  <Ionicons name="arrow-back-outline" size={28} color="white" />
-                </TouchableOpacity>
-                <View>
-                  <Text className="text-white text-4xl font-bold">Welcome Back</Text>
-                  <Text className="text-blue-100 text-xl mt-2">Sign in to continue your journey</Text>
-                </View>
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* Header */}
+          <LinearGradient
+            colors={["#3B82F6", "#2563EB"]}
+            className="pt-20 pb-16 px-6 rounded-b-[40px]"
+            style={{ paddingTop: insets.top + 60 }}
+          >
+            <View className="items-center">
+              <View className="w-20 h-20 bg-white/20 rounded-full items-center justify-center mb-4">
+                <Image
+                  source={require("@/assets/images/icon.png")}
+                  className="w-14 h-14"
+                  resizeMode="contain"
+                />
               </View>
-            </View>
-
-            {/* Login Card */}
-            <View className="bg-white rounded-2xl p-6 shadow-lg shadow-black/25">
-              <Text className="text-gray-800 text-2xl font-bold mb-6">Login</Text>
-
-              {/* Email */}
-              <View className="mb-5">
-                <Text className="text-gray-700 font-medium mb-2">Email</Text>
-                <View className={`flex-row items-center border rounded-lg px-4 py-3 ${errors.email ? "border-red-500" : "border-gray-300"}`}>
-                  <Mail className="text-gray-500" size={20} />
-                  <TextInput
-                    className="flex-1 ml-3 text-gray-800 text-base"
-                    placeholder="Enter your email"
-                    placeholderTextColor="#9CA3AF"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-                {!!errors.email && <Text className="text-red-500 text-sm mt-1">{errors.email}</Text>}
-              </View>
-
-              {/* Password */}
-              <View className="mb-6">
-                <Text className="text-gray-700 font-medium mb-2">Password</Text>
-                <View className={`flex-row items-center border rounded-lg px-4 py-3 ${errors.password ? "border-red-500" : "border-gray-300"}`}>
-                  <Lock className="text-gray-500" size={20} />
-                  <TextInput
-                    className="flex-1 ml-3 text-gray-800 text-base"
-                    placeholder="Enter your password"
-                    placeholderTextColor="#9CA3AF"
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry={!isPasswordVisible}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <TouchableOpacity
-                    onPress={() => { setIsPasswordVisible((prev) => !prev); animateEye(); }}
-                    className="ml-2"
-                  >
-                    <Animated.View style={{ transform: [{ scale: eyeAnim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }], opacity: eyeAnim }}>
-                      {isPasswordVisible ? <EyeOff className="text-gray-500" size={20} /> : <Eye className="text-gray-500" size={20} />}
-                    </Animated.View>
-                  </TouchableOpacity>
-                </View>
-                {!!errors.password && <Text className="text-red-500 text-sm mt-1">{errors.password}</Text>}
-              </View>
-
-              {/* Forgot Password */}
-              <TouchableOpacity className="items-end mb-6" onPress={handleForgotPassword}>
-                <Text className="text-blue-500 font-medium">Forgot Password?</Text>
-              </TouchableOpacity>
-
-              {/* Button */}
-              <TouchableOpacity
-                className={`bg-blue-500 rounded-xl py-4 mb-6 items-center justify-center shadow-md shadow-black/25 ${isLoading ? "opacity-70" : "active:bg-blue-600 active:scale-95"}`}
-                onPress={handleLogin}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <Text className="text-white text-lg font-semibold">Verifying...</Text>
-                ) : (
-                  <Text className="text-white text-lg font-semibold">Sign In</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {/* Alert Notification */}
-            {alert.type && (
-              <Animated.View
-                style={{
-                  opacity: alertAnim,
-                  transform: [{ translateY: alertAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }, { scale: alertAnim.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1] }) }],
-                  position: 'absolute', bottom: 60, left: 24, right: 24, zIndex: 999,
-                }}
-                className={`rounded-2xl py-4 px-5 shadow-lg shadow-black/30 flex-row items-center justify-between ${alert.type === "success" ? "bg-green-500" : "bg-red-500"}`}
-              >
-                <View className="flex-row items-center space-x-3 flex-1">
-                  {alert.type === "success" ? <CheckCircle className="text-white" size={22} /> : <XCircle className="text-white" size={22} />}
-                  <Text className="flex-1 text-white text-base font-semibold">{alert.message}</Text>
-                </View>
-                <TouchableOpacity onPress={() => Animated.timing(alertAnim, { toValue: 0, duration: 300, easing: Easing.in(Easing.quad), useNativeDriver: true }).start(() => setAlert({ type: null, message: "" }))}>
-                  <Text className="text-white text-xl font-bold ml-2">×</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            )}
-
-            <View className="mt-8 items-center">
-              <Text className="text-blue-100 text-center text-sm">By signing in, you agree to our Terms of Service and Privacy Policy</Text>
+              <Text className="text-white text-2xl font-bold">HRIS Mobile</Text>
+              <Text className="text-blue-100 mt-1">Human Resource Information System</Text>
             </View>
           </LinearGradient>
-        </Animated.View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+
+          {/* Form */}
+          <View className="flex-1 px-6 pt-8">
+            <Text className="text-2xl font-bold text-gray-800 mb-2">Masuk</Text>
+            <Text className="text-gray-500 mb-8">Silakan login untuk melanjutkan</Text>
+
+            {/* Email Input */}
+            <View className="mb-4">
+              <Text className="text-gray-700 font-medium mb-2">Email</Text>
+              <View className="flex-row items-center bg-gray-100 rounded-xl px-4">
+                <Mail color="#9CA3AF" size={20} />
+                <TextInput
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="email@company.com"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  className="flex-1 py-4 px-3 text-gray-900"
+                />
+              </View>
+            </View>
+
+            {/* Password Input */}
+            <View className="mb-6">
+              <Text className="text-gray-700 font-medium mb-2">Password</Text>
+              <View className="flex-row items-center bg-gray-100 rounded-xl px-4">
+                <Lock color="#9CA3AF" size={20} />
+                <TextInput
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor="#9CA3AF"
+                  secureTextEntry={!showPassword}
+                  className="flex-1 py-4 px-3 text-gray-900"
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                  {showPassword ? (
+                    <EyeOff color="#9CA3AF" size={20} />
+                  ) : (
+                    <Eye color="#9CA3AF" size={20} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Login Button */}
+            <TouchableOpacity
+              onPress={() => handleLogin()}
+              disabled={loading}
+              className={`py-4 rounded-xl items-center ${loading ? "bg-gray-400" : "bg-blue-500"}`}
+            >
+              {loading ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text className="text-white font-bold text-lg">Masuk</Text>
+              )}
+            </TouchableOpacity>
+
+            {/* Biometric Login */}
+            {biometricAvailable && biometricEnabled && (
+              <TouchableOpacity
+                onPress={handleBiometricLogin}
+                className="mt-4 py-4 rounded-xl items-center border border-blue-500 flex-row justify-center"
+              >
+                <Fingerprint color="#3B82F6" size={24} />
+                <Text className="text-blue-500 font-bold text-lg ml-2">
+                  Login dengan {getBiometricLabel(biometricType)}
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Footer */}
+            <View className="mt-auto pb-8 pt-6">
+              <Text className="text-center text-gray-400 text-sm">
+                © 2025 HRIS Mobile App
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* 2FA Modal */}
+      <Modal
+        visible={show2FAModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShow2FAModal(false)}
+      >
+        <View className="flex-1 bg-black/50 justify-center px-6">
+          <View className="bg-white rounded-2xl p-6">
+            <View className="flex-row justify-between items-center mb-4">
+              <Text className="text-xl font-bold text-gray-900">Verifikasi 2FA</Text>
+              <TouchableOpacity onPress={() => {
+                setShow2FAModal(false);
+                setTotpCode("");
+                setLoading(false);
+              }}>
+                <X color="#6B7280" size={24} />
+              </TouchableOpacity>
+            </View>
+
+            <Text className="text-gray-600 mb-4">
+              Masukkan kode dari aplikasi Authenticator Anda:
+            </Text>
+
+            <TextInput
+              value={totpCode}
+              onChangeText={(text) => setTotpCode(text.replace(/\D/g, ""))}
+              placeholder="000000"
+              placeholderTextColor="#9CA3AF"
+              keyboardType="number-pad"
+              maxLength={6}
+              className="bg-gray-100 p-4 rounded-xl text-center text-2xl font-bold tracking-widest mb-4 text-gray-900"
+            />
+
+            <TouchableOpacity
+              onPress={handle2FAVerify}
+              disabled={verifying2FA || totpCode.length !== 6}
+              className={`py-4 rounded-xl items-center ${
+                verifying2FA || totpCode.length !== 6 ? "bg-gray-400" : "bg-blue-500"
+              }`}
+            >
+              {verifying2FA ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text className="text-white font-bold text-lg">Verifikasi</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }

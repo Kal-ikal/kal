@@ -2,10 +2,10 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/components/CustomTabBar.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ FIXED V3: Auto-hide on pengajuan page
+// ✅ Phase 4: Added Approvals tab (role-based visibility)
 // ===========================================================
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   TouchableOpacity,
@@ -18,6 +18,7 @@ import {
   DollarSign,
   User,
   Settings,
+  CheckSquare,
 } from "lucide-react-native";
 import Animated, {
   useAnimatedStyle,
@@ -29,60 +30,79 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTabBarStore } from "@/hooks/useTabBarStore";
-import { LinearGradient } from "expo-linear-gradient";
-import { cssInterop } from "nativewind";
-
-// NativeWind Fix
-cssInterop(LinearGradient, { className: "style" });
+import { useAuth } from "@/context/AuthContext";
+import { supabase } from "@/lib/supabase";
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
 
-// Tab configuration matching the routes
-const TABS = [
-  { name: "home", icon: Home, label: "Home" },
-  { name: "pengajuan", icon: FileText, label: "Pengajuan" },
-  { name: "konversi", icon: DollarSign, label: "Konversi" },
-  { name: "profile", icon: User, label: "Profile" },
-  { name: "settings", icon: Settings, label: "Settings" },
+// All possible tabs
+const ALL_TABS = [
+  { name: "home", icon: Home, label: "Home", roles: ["employee", "manager", "dfd", "hrd"] },
+  { name: "pengajuan", icon: FileText, label: "Pengajuan", roles: ["employee", "manager", "dfd", "hrd"] },
+  { name: "approvals", icon: CheckSquare, label: "Approvals", roles: ["manager", "dfd", "hrd"] }, // Only for approvers
+  { name: "konversi", icon: DollarSign, label: "Konversi", roles: ["employee", "manager", "dfd", "hrd"] },
+  { name: "profile", icon: User, label: "Profile", roles: ["employee", "manager", "dfd", "hrd"] },
+  { name: "settings", icon: Settings, label: "Settings", roles: ["employee", "manager", "dfd", "hrd"] },
 ];
 
-// ✅ NEW: Pages where tab bar should auto-hide
+// Pages where tab bar should auto-hide
 const AUTO_HIDE_PAGES = ["pengajuan"];
 
-const PRIMARY_COLOR = "#130057"; // Deep Navy
-const ACTIVE_BG_COLOR = "#FFFFFF"; // White
-const ACTIVE_ICON_COLOR = "#130057"; // Deep Navy
-const INACTIVE_ICON_COLOR = "#FFFFFF"; // White
+const PRIMARY_COLOR = "#130057";
+const ACTIVE_BG_COLOR = "#FFFFFF";
+const ACTIVE_ICON_COLOR = "#130057";
+const INACTIVE_ICON_COLOR = "#FFFFFF";
 
 export default function CustomTabBar({
   state,
-  descriptors,
   navigation,
 }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const isVisible = useTabBarStore((state) => state.isVisible);
   const setIsVisible = useTabBarStore((state) => state.setIsVisible);
+  const { session } = useAuth();
+
+  const [userRole, setUserRole] = useState<string>("employee");
+
+  // Get user role
+  useEffect(() => {
+    const fetchRole = async () => {
+      if (!session?.user?.id) return;
+      
+      const { data } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", session.user.id)
+        .single();
+      
+      if (data?.role) {
+        setUserRole(data.role);
+      }
+    };
+
+    fetchRole();
+  }, [session?.user?.id]);
+
+  // Filter tabs based on user role
+  const visibleTabs = ALL_TABS.filter(tab => tab.roles.includes(userRole));
 
   // Get current route name
   const currentRouteName = state.routes[state.index]?.name;
 
-  // Shared Value for visibility animation (Y-axis translation)
+  // Shared Value for visibility animation
   const translateY = useSharedValue(0);
 
-  // ✅ NEW: Auto-hide tab bar on specific pages
+  // Auto-hide tab bar on specific pages
   useEffect(() => {
     if (AUTO_HIDE_PAGES.includes(currentRouteName)) {
-      // Auto-hide on pengajuan page
       setIsVisible(false);
     } else {
-      // Show on other pages
       setIsVisible(true);
     }
   }, [currentRouteName, setIsVisible]);
 
   // React to visibility changes
   useEffect(() => {
-    // Hide value: Height of bar (approx 60) + bottom padding
     const hideValue = 100 + insets.bottom + 30;
     translateY.value = withTiming(isVisible ? 0 : hideValue, {
       duration: 300,
@@ -100,8 +120,6 @@ export default function CustomTabBar({
       style={[
         styles.container,
         {
-          // Specific positioning fix: Use insets.bottom for BOTH platforms
-          // to avoid overlap with transparent system bar on Android
           bottom: insets.bottom + 10,
         },
         animatedContainerStyle,
@@ -109,9 +127,9 @@ export default function CustomTabBar({
     >
       {state.routes.map((route, index) => {
         // Find configuration for this route
-        const tabConfig = TABS.find((t) => t.name === route.name);
+        const tabConfig = visibleTabs.find((t) => t.name === route.name);
 
-        // If route is not in our config (e.g. index, +not-found), skip it
+        // If route is not in visible tabs, skip it
         if (!tabConfig) return null;
 
         const isFocused = state.index === index;
@@ -127,11 +145,10 @@ export default function CustomTabBar({
           if (!isFocused && !event.defaultPrevented) {
             navigation.navigate(route.name);
           } else if (isFocused) {
-            // Emit event for "Scroll to Top"
             navigation.emit({
-                type: "tabPress",
-                target: route.key,
-                canPreventDefault: true,
+              type: "tabPress",
+              target: route.key,
+              canPreventDefault: true,
             });
           }
         };
@@ -147,20 +164,20 @@ export default function CustomTabBar({
             ]}
           >
             <View style={styles.contentContainer}>
-                <Icon
+              <Icon
                 size={22}
                 color={isFocused ? ACTIVE_ICON_COLOR : INACTIVE_ICON_COLOR}
-                />
-                {isFocused && (
+              />
+              {isFocused && (
                 <Animated.Text
-                    entering={FadeIn.duration(200)}
-                    exiting={FadeOut.duration(200)}
-                    style={styles.label}
-                    numberOfLines={1}
+                  entering={FadeIn.duration(200)}
+                  exiting={FadeOut.duration(200)}
+                  style={styles.label}
+                  numberOfLines={1}
                 >
-                    {tabConfig.label}
+                  {tabConfig.label}
                 </Animated.Text>
-                )}
+              )}
             </View>
           </AnimatedTouchableOpacity>
         );
@@ -193,16 +210,16 @@ const styles = StyleSheet.create({
   },
   tabItem: {
     height: 44,
-    borderRadius: 22, // Half of height for pill shape
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
     flexDirection: "row",
     paddingHorizontal: 12,
   },
   contentContainer: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
   label: {
     color: ACTIVE_ICON_COLOR,
