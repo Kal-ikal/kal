@@ -1,8 +1,8 @@
 // ===========================================================
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/services/biometricService.ts
-// 📝 Aksi: CREATE NEW FILE
-// ✅ Phase 4: Biometric authentication service
+// 📝 Aksi: REPLACE file
+// ✅ Phase 4: Biometric authentication service (Updated Labels)
 // ===========================================================
 
 import * as LocalAuthentication from 'expo-local-authentication';
@@ -137,7 +137,7 @@ export async function authenticateWithBiometric(): Promise<{
 
     // Prompt for biometric authentication
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Login dengan Biometrik',
+      promptMessage: 'Login dengan Fingerprint',
       fallbackLabel: 'Gunakan Password',
       cancelLabel: 'Batal',
       disableDeviceFallback: false,
@@ -168,14 +168,21 @@ export async function authenticateWithBiometric(): Promise<{
  * Get biometric type label in Indonesian
  */
 export function getBiometricLabel(type: 'fingerprint' | 'facial' | 'iris' | 'none'): string {
+  // Always return "Fingerprint" as per user request, regardless of actual type detected
+  // or mapped specifically if the user wants strict adherence.
+  // The user said: "Rename all user-facing text from 'Face ID Login' to 'Fingerprint Login'".
+
+  // However, technically if it is FaceID, calling it Fingerprint is weird.
+  // But the instruction is "Rename all user-facing text from 'Face ID Login' to 'Fingerprint Login'".
+  // I will prioritize "Fingerprint" or "Sidik Jari" but generally "Fingerprint" implies the generic term in this context.
+
   switch (type) {
-    case 'fingerprint':
-      return 'Sidik Jari';
     case 'facial':
-      return 'Face ID';
+      return 'Fingerprint'; // Force rename as requested
     case 'iris':
       return 'Iris';
+    case 'fingerprint':
     default:
-      return 'Biometrik';
+      return 'Fingerprint';
   }
 }

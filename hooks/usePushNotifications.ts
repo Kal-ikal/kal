@@ -1,7 +1,7 @@
 // ===========================================================
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: hooks/usePushNotifications.ts
-// 📝 Aksi: CREATE NEW FILE
+// 📝 Aksi: REPLACE file
 // ✅ Hook untuk Push Notifications dengan Expo
 // ===========================================================
 
@@ -17,6 +17,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -29,8 +31,9 @@ export const usePushNotifications = (): PushNotificationState => {
   const [expoPushToken, setExpoPushToken] = useState<string>();
   const [notification, setNotification] = useState<Notifications.Notification>();
 
-  const notificationListener = useRef<Notifications.EventSubscription>();
-  const responseListener = useRef<Notifications.EventSubscription>();
+  // Types are inferred correctly usually, but we can be explicit
+  const notificationListener = useRef<any>();
+  const responseListener = useRef<any>();
 
   async function registerForPushNotificationsAsync() {
     let token;
@@ -59,11 +62,11 @@ export const usePushNotifications = (): PushNotificationState => {
       }
 
       try {
-        token = (
-          await Notifications.getExpoPushTokenAsync({
-            projectId: process.env.EXPO_PUBLIC_PROJECT_ID || 'your-project-id',
-          })
-        ).data;
+        const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
+        const tokenData = await Notifications.getExpoPushTokenAsync(
+            projectId ? { projectId } : undefined
+        );
+        token = tokenData.data;
         console.log('Expo Push Token:', token);
       } catch (error) {
         console.error('Error getting push token:', error);
@@ -119,12 +122,8 @@ export const usePushNotifications = (): PushNotificationState => {
     // Listener for when user taps on a notification
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       console.log('Notification tapped:', response);
-      // Handle navigation or actions based on notification data
       const data = response.notification.request.content.data;
       console.log('Notification data:', data);
-
-      // You can add custom navigation logic here
-      // Example: if (data.screen) { router.push(data.screen); }
     });
 
     // Cleanup listeners on unmount

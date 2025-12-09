@@ -55,6 +55,7 @@ import {
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import LogoutModal from "@/components/LogoutModal";
 
 cssInterop(LinearGradient, { className: "style" });
 
@@ -98,6 +99,7 @@ export default function SettingsScreen() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // Fetch biometric status
   useEffect(() => {
@@ -306,17 +308,13 @@ export default function SettingsScreen() {
 
   // Handle logout
   const handleLogout = () => {
-    Alert.alert("Keluar", "Apakah Anda yakin ingin keluar?", [
-      { text: "Batal", style: "cancel" },
-      {
-        text: "Keluar",
-        style: "destructive",
-        onPress: async () => {
-          await signOut();
-          router.replace("/(auth)/login");
-        },
-      },
-    ]);
+    setShowLogoutModal(true);
+  };
+
+  const confirmLogout = async () => {
+    setShowLogoutModal(false);
+    await signOut();
+    router.replace("/(auth)/login");
   };
 
   const is2FAEnabled = mfaFactors.length > 0;
@@ -599,6 +597,13 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      <LogoutModal
+        visible={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={confirmLogout}
+        isDarkMode={isDarkMode}
+      />
 
       {/* Change Password Modal */}
       <Modal
