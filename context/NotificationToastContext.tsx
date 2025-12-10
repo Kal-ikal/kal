@@ -16,11 +16,11 @@ import {
 } from "react-native";
 import Animated, {
   Easing,
-  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming
 } from "react-native-reanimated";
+import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -144,7 +144,7 @@ function Toast({
     scale.value = withTiming(0.8, { duration: 150 });
     translateY.value = withTiming(-20, { duration: 150 }, (finished) => {
       if (finished) {
-        runOnJS(onDismiss)(toastData.id);
+        scheduleOnRN(onDismiss, toastData.id);
       }
     });
   }, [opacity, scale, translateY, onDismiss, toastData.id]);
