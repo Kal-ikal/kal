@@ -31,9 +31,8 @@ export const usePushNotifications = (): PushNotificationState => {
   const [expoPushToken, setExpoPushToken] = useState<string>();
   const [notification, setNotification] = useState<Notifications.Notification>();
 
-  // Types are inferred correctly usually, but we can be explicit
-  const notificationListener = useRef<any>();
-  const responseListener = useRef<any>();
+  const notificationListener = useRef<Notifications.EventSubscription | null>(null);
+  const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
   async function registerForPushNotificationsAsync() {
     let token;
@@ -129,10 +128,10 @@ export const usePushNotifications = (): PushNotificationState => {
     // Cleanup listeners on unmount
     return () => {
       if (notificationListener.current) {
-        Notifications.removeNotificationSubscription(notificationListener.current);
+        notificationListener.current.remove();
       }
       if (responseListener.current) {
-        Notifications.removeNotificationSubscription(responseListener.current);
+        responseListener.current.remove();
       }
     };
   }, []);

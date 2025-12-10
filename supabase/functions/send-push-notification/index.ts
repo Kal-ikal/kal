@@ -14,7 +14,7 @@ interface NotificationPayload {
   user_id: string
   title: string
   body: string
-  data?: Record<string, any>
+  data?: Record<string, unknown>
 }
 
 serve(async (req: Request) => {
@@ -109,10 +109,11 @@ serve(async (req: Request) => {
         }
       }
     )
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error in send-push-notification function:', error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }
