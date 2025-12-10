@@ -271,18 +271,24 @@ export default function SettingsScreen() {
 
   // Handle password change
   const handleChangePassword = async (event: GestureResponderEvent) => {
+    // Capture position synchronously before async operations
+    const toastPosition = {
+      x: event.nativeEvent.pageX,
+      y: event.nativeEvent.pageY,
+    };
+
     if (!currentPassword || !newPassword || !confirmPassword) {
-      showError("Error", "Semua field harus diisi", event);
+      showError("Error", "Semua field harus diisi", toastPosition);
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      showError("Error", "Password baru tidak cocok", event);
+      showError("Error", "Password baru tidak cocok", toastPosition);
       return;
     }
 
     if (newPassword.length < 6) {
-      showError("Error", "Password minimal 6 karakter", event);
+      showError("Error", "Password minimal 6 karakter", toastPosition);
       return;
     }
 
@@ -294,13 +300,13 @@ export default function SettingsScreen() {
 
       if (error) throw error;
 
-      showSuccess("Berhasil", "Password berhasil diubah", event);
+      showSuccess("Berhasil", "Password berhasil diubah", toastPosition);
       setShowPasswordModal(false);
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
     } catch (error: any) {
-      showError("Gagal", error.message || "Tidak dapat mengubah password", event);
+      showError("Gagal", error.message || "Tidak dapat mengubah password", toastPosition);
     } finally {
       setChangingPassword(false);
     }
@@ -393,7 +399,11 @@ export default function SettingsScreen() {
               </View>
               <Switch
                 value={notificationsEnabled}
-                onValueChange={setNotificationsEnabled}
+                onValueChange={(val) => {
+                  setNotificationsEnabled(val);
+                  // TODO: Implement backend persistence for notification settings
+                  // Currently only updates local state
+                }}
                 trackColor={{ false: "#D1D5DB", true: "#10B981" }}
                 thumbColor="#FFFFFF"
               />

@@ -41,10 +41,10 @@ interface ToastData {
 }
 
 interface ToastContextType {
-  showSuccess: (title: string, message?: string, event?: GestureResponderEvent) => void;
-  showError: (title: string, message?: string, event?: GestureResponderEvent) => void;
-  showWarning: (title: string, message?: string, event?: GestureResponderEvent) => void;
-  showInfo: (title: string, message?: string, event?: GestureResponderEvent) => void;
+  showSuccess: (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => void;
+  showError: (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => void;
+  showWarning: (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => void;
+  showInfo: (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => void;
   // Legacy support (tanpa position)
   showToast: (type: ToastType, title: string, message?: string) => void;
 }
@@ -280,39 +280,50 @@ export function NotificationToastProvider({ children }: { children: React.ReactN
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Extract position from event
-  const getPositionFromEvent = (event?: GestureResponderEvent): ToastPosition | undefined => {
-    if (!event?.nativeEvent) return undefined;
-    return {
-      x: event.nativeEvent.pageX,
-      y: event.nativeEvent.pageY,
-    };
+  // Extract position from event or object
+  const getPositionFromEvent = (eventOrPos?: GestureResponderEvent | ToastPosition): ToastPosition | undefined => {
+    if (!eventOrPos) return undefined;
+
+    // Check if it's a native event
+    if ('nativeEvent' in eventOrPos && eventOrPos.nativeEvent) {
+       return {
+         x: eventOrPos.nativeEvent.pageX,
+         y: eventOrPos.nativeEvent.pageY,
+       };
+    }
+
+    // Check if it's already a position object
+    if ('x' in eventOrPos && 'y' in eventOrPos) {
+      return eventOrPos as ToastPosition;
+    }
+
+    return undefined;
   };
 
   const showSuccess = useCallback(
-    (title: string, message?: string, event?: GestureResponderEvent) => {
-      addToast("success", title, message, getPositionFromEvent(event));
+    (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => {
+      addToast("success", title, message, getPositionFromEvent(positionOrEvent));
     },
     [addToast]
   );
 
   const showError = useCallback(
-    (title: string, message?: string, event?: GestureResponderEvent) => {
-      addToast("error", title, message, getPositionFromEvent(event));
+    (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => {
+      addToast("error", title, message, getPositionFromEvent(positionOrEvent));
     },
     [addToast]
   );
 
   const showWarning = useCallback(
-    (title: string, message?: string, event?: GestureResponderEvent) => {
-      addToast("warning", title, message, getPositionFromEvent(event));
+    (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => {
+      addToast("warning", title, message, getPositionFromEvent(positionOrEvent));
     },
     [addToast]
   );
 
   const showInfo = useCallback(
-    (title: string, message?: string, event?: GestureResponderEvent) => {
-      addToast("info", title, message, getPositionFromEvent(event));
+    (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => {
+      addToast("info", title, message, getPositionFromEvent(positionOrEvent));
     },
     [addToast]
   );
@@ -362,4 +373,3 @@ export function useToast() {
 
 // Export type for external use
 export type { GestureResponderEvent, ToastType };
-
