@@ -16,6 +16,7 @@ import {
 } from "react-native";
 import Animated, {
   Easing,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withTiming
@@ -141,9 +142,10 @@ function Toast({
   const dismissToast = useCallback(() => {
     opacity.value = withTiming(0, { duration: 150 });
     scale.value = withTiming(0.8, { duration: 150 });
-    translateY.value = withTiming(-20, { duration: 150 }, () => {
-      // runOnJS is deprecated; use setTimeout to bridge to JS
-      setTimeout(() => onDismiss(toastData.id), 0);
+    translateY.value = withTiming(-20, { duration: 150 }, (finished) => {
+      if (finished) {
+        runOnJS(onDismiss)(toastData.id);
+      }
     });
   }, [opacity, scale, translateY, onDismiss, toastData.id]);
 
