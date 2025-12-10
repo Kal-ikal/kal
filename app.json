@@ -27,7 +27,7 @@
         "NSPhotoLibraryAddUsageDescription": "This app saves photos to your library after you take them.",
         "NSMicrophoneUsageDescription": "This app does not use the microphone.",
         "NSLocationWhenInUseUsageDescription": "This app uses your location for attendance check-in features.",
-        "NSFaceIDUsageDescription": "This app uses Face ID to secure your login and protect your data.",
+        "NSFaceIDUsageDescription": "This app uses FingerPrint to secure your login and protect your data.",
         "NSUserTrackingUsageDescription": "This data will be used to provide you a better and personalized experience."
       },
       "config": {
@@ -108,7 +108,7 @@
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Allow Annual & Benefit to use Face ID for secure login and data protection."
+          "faceIDPermission": "Allow Annual & Benefit to use FingerPrint for secure login and data protection."
         }
       ],
       [

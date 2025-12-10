@@ -1,15 +1,15 @@
 // ===========================================================
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: hooks/usePushNotifications.ts
-// 📝 Aksi: CREATE NEW FILE
+// 📝 Aksi: REPLACE file
 // ✅ Hook untuk Push Notifications dengan Expo
 // ===========================================================
 
-import { supabase } from '@/lib/supabase';
-import * as Device from 'expo-device';
+import { useState, useEffect, useRef } from 'react';
 import * as Notifications from 'expo-notifications';
-import { useEffect, useRef, useState } from 'react';
+import * as Device from 'expo-device';
 import { Platform } from 'react-native';
+import { supabase } from '@/lib/supabase';
 
 // Configure how notifications are handled when app is in foreground
 Notifications.setNotificationHandler({
@@ -31,16 +31,8 @@ export const usePushNotifications = (): PushNotificationState => {
   const [expoPushToken, setExpoPushToken] = useState<string>();
   const [notification, setNotification] = useState<Notifications.Notification>();
 
-  // The exact subscription type returned by the listener functions can change
-  // across SDK versions. Use a `ReturnType` alias so TypeScript always matches
-  // the actual runtime return type of the listener functions and avoids
-  // referencing potentially-deprecated exported types like `Subscription`.
-  type NotificationSubscription = ReturnType<typeof Notifications.addNotificationReceivedListener>;
-  type ResponseSubscription = ReturnType<typeof Notifications.addNotificationResponseReceivedListener>;
-
-  // initialize as `null` to make checks straightforward in cleanup
-  const notificationListener = useRef<NotificationSubscription | null>(null);
-  const responseListener = useRef<ResponseSubscription | null>(null);
+  const notificationListener = useRef<Notifications.EventSubscription | null>(null);
+  const responseListener = useRef<Notifications.EventSubscription | null>(null);
 
   async function registerForPushNotificationsAsync() {
     let token;
@@ -69,11 +61,11 @@ export const usePushNotifications = (): PushNotificationState => {
       }
 
       try {
-        token = (
-          await Notifications.getExpoPushTokenAsync({
-            projectId: process.env.EXPO_PUBLIC_PROJECT_ID || 'your-project-id',
-          })
-        ).data;
+        const projectId = process.env.EXPO_PUBLIC_PROJECT_ID;
+        const tokenData = await Notifications.getExpoPushTokenAsync(
+            projectId ? { projectId } : undefined
+        );
+        token = tokenData.data;
         console.log('Expo Push Token:', token);
       } catch (error) {
         console.error('Error getting push token:', error);
@@ -129,23 +121,17 @@ export const usePushNotifications = (): PushNotificationState => {
     // Listener for when user taps on a notification
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       console.log('Notification tapped:', response);
-      // Handle navigation or actions based on notification data
       const data = response.notification.request.content.data;
       console.log('Notification data:', data);
-
-      // You can add custom navigation logic here
-      // Example: if (data.screen) { router.push(data.screen); }
     });
 
     // Cleanup listeners on unmount
     return () => {
       if (notificationListener.current) {
         notificationListener.current.remove();
-        notificationListener.current = null;
       }
       if (responseListener.current) {
         responseListener.current.remove();
-        responseListener.current = null;
       }
     };
   }, []);

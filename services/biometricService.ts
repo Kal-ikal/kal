@@ -1,7 +1,7 @@
 // ===========================================================
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/services/biometricService.ts
-// 📝 Aksi: CREATE NEW FILE
+// 📝 Aksi: REPLACE file
 // ✅ Phase 4: Biometric authentication service
 // ===========================================================
 
@@ -137,7 +137,7 @@ export async function authenticateWithBiometric(): Promise<{
 
     // Prompt for biometric authentication
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: 'Login dengan Biometrik',
+      promptMessage: 'Login dengan Fingerprint',
       fallbackLabel: 'Gunakan Password',
       cancelLabel: 'Batal',
       disableDeviceFallback: false,
@@ -169,13 +169,12 @@ export async function authenticateWithBiometric(): Promise<{
  */
 export function getBiometricLabel(type: 'fingerprint' | 'facial' | 'iris' | 'none'): string {
   switch (type) {
-    case 'fingerprint':
-      return 'Sidik Jari';
     case 'facial':
-      return 'Face ID';
+      return 'Fingerprint'; // Force rename as requested
     case 'iris':
       return 'Iris';
+    case 'fingerprint':
     default:
-      return 'Biometrik';
+      return 'Fingerprint';
   }
 }

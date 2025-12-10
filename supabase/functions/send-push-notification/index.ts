@@ -1,7 +1,7 @@
 // ===========================================================
 // 🔧 SUPABASE EDGE FUNCTION
 // 📁 Lokasi: supabase/functions/send-push-notification/index.ts
-// 📝 Aksi: CREATE NEW FILE
+// 📝 Aksi: REPLACE FILE
 // ✅ Edge Function untuk mengirim push notifications via Expo
 // ===========================================================
 
@@ -14,10 +14,10 @@ interface NotificationPayload {
   user_id: string
   title: string
   body: string
-  data?: Record<string, any>
+  data?: Record<string, unknown>
 }
 
-serve(async (req) => {
+serve(async (req: Request) => {
   try {
     // CORS headers
     if (req.method === 'OPTIONS') {
@@ -109,10 +109,11 @@ serve(async (req) => {
         }
       }
     )
-  } catch (error) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error in send-push-notification function:', error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     )
   }

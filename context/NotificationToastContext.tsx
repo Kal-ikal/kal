@@ -1,8 +1,8 @@
 // ===========================================================
 // 📱 FRONT-END EXPO
-// 📁 Lokasi: context/NotificationToastContext.tsx
+// 📁 Lokasi: annualbenefit/context/NotificationToastContext.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ Fix: Crash on Dismiss (runOnJS) & Position Aware
+// ✅ Phase 4: Position-aware toast notifications
 // ===========================================================
 
 import { AlertCircle, CheckCircle, Info, X, XCircle } from "lucide-react-native";
@@ -18,9 +18,9 @@ import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
-  withTiming,
-  runOnJS // ✅ WAJIB: Untuk memanggil fungsi JS dari thread UI
+  withTiming
 } from "react-native-reanimated";
+import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -41,10 +41,10 @@ interface ToastData {
 }
 
 interface ToastContextType {
-  showSuccess: (title: string, message?: string, event?: GestureResponderEvent) => void;
-  showError: (title: string, message?: string, event?: GestureResponderEvent) => void;
-  showWarning: (title: string, message?: string, event?: GestureResponderEvent) => void;
-  showInfo: (title: string, message?: string, event?: GestureResponderEvent) => void;
+  showSuccess: (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => void;
+  showError: (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => void;
+  showWarning: (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => void;
+  showInfo: (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => void;
   // Legacy support (tanpa position)
   showToast: (type: ToastType, title: string, message?: string) => void;
 }
@@ -98,10 +98,10 @@ function Toast({
 
   const colors = getToastColors(toastData.type);
 
-  // Calculate position logic
+  // Calculate position
   const getToastPosition = () => {
     if (!toastData.position) {
-      // Default: top center if no touch event provided
+      // Default: top center
       return {
         top: insets.top + 60,
         left: 20,
@@ -124,7 +124,7 @@ function Toast({
       // Show above press point
       top = y - TOAST_HEIGHT - PADDING;
     } else {
-      // Center vertically fallback
+      // Center vertically
       top = SCREEN_HEIGHT / 2 - TOAST_HEIGHT / 2;
     }
 
@@ -139,25 +139,23 @@ function Toast({
 
   const position = getToastPosition();
 
-  // ✅ CRITICAL FIX: Menggunakan runOnJS untuk memanggil onDismiss
   const dismissToast = useCallback(() => {
     opacity.value = withTiming(0, { duration: 150 });
     scale.value = withTiming(0.8, { duration: 150 });
-    
     translateY.value = withTiming(-20, { duration: 150 }, (finished) => {
       if (finished) {
-        // Panggil fungsi JS dari UI thread dengan aman
-        runOnJS(onDismiss)(toastData.id);
+        scheduleOnRN(onDismiss, toastData.id);
       }
     });
   }, [opacity, scale, translateY, onDismiss, toastData.id]);
 
-  // Animate in & Auto dismiss
+  // Animate in
   React.useEffect(() => {
     opacity.value = withTiming(1, { duration: 200 });
     scale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.back(1.5)) });
     translateY.value = withTiming(0, { duration: 200 });
 
+    // Auto dismiss
     const timer = setTimeout(() => {
       dismissToast();
     }, TOAST_DURATION);
@@ -270,7 +268,7 @@ export function NotificationToastProvider({ children }: { children: React.ReactN
       const id = `toast-${++toastIdRef.current}`;
       
       setToasts((prev) => {
-        // Limit to 3 toasts max to prevent clutter
+        // Limit to 3 toasts max
         const newToasts = prev.length >= 3 ? prev.slice(1) : prev;
         return [...newToasts, { id, type, title, message, position }];
       });
@@ -282,44 +280,55 @@ export function NotificationToastProvider({ children }: { children: React.ReactN
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Helper: Extract position from event
-  const getPositionFromEvent = (event?: GestureResponderEvent): ToastPosition | undefined => {
-    if (!event?.nativeEvent) return undefined;
-    return {
-      x: event.nativeEvent.pageX,
-      y: event.nativeEvent.pageY,
-    };
+  // Extract position from event or object
+  const getPositionFromEvent = (eventOrPos?: GestureResponderEvent | ToastPosition): ToastPosition | undefined => {
+    if (!eventOrPos) return undefined;
+
+    // Check if it's a native event
+    if ('nativeEvent' in eventOrPos && eventOrPos.nativeEvent) {
+       return {
+         x: eventOrPos.nativeEvent.pageX,
+         y: eventOrPos.nativeEvent.pageY,
+       };
+    }
+
+    // Check if it's already a position object
+    if ('x' in eventOrPos && 'y' in eventOrPos) {
+      return eventOrPos as ToastPosition;
+    }
+
+    return undefined;
   };
 
   const showSuccess = useCallback(
-    (title: string, message?: string, event?: GestureResponderEvent) => {
-      addToast("success", title, message, getPositionFromEvent(event));
+    (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => {
+      addToast("success", title, message, getPositionFromEvent(positionOrEvent));
     },
     [addToast]
   );
 
   const showError = useCallback(
-    (title: string, message?: string, event?: GestureResponderEvent) => {
-      addToast("error", title, message, getPositionFromEvent(event));
+    (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => {
+      addToast("error", title, message, getPositionFromEvent(positionOrEvent));
     },
     [addToast]
   );
 
   const showWarning = useCallback(
-    (title: string, message?: string, event?: GestureResponderEvent) => {
-      addToast("warning", title, message, getPositionFromEvent(event));
+    (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => {
+      addToast("warning", title, message, getPositionFromEvent(positionOrEvent));
     },
     [addToast]
   );
 
   const showInfo = useCallback(
-    (title: string, message?: string, event?: GestureResponderEvent) => {
-      addToast("info", title, message, getPositionFromEvent(event));
+    (title: string, message?: string, positionOrEvent?: GestureResponderEvent | ToastPosition) => {
+      addToast("info", title, message, getPositionFromEvent(positionOrEvent));
     },
     [addToast]
   );
 
-  // Legacy support (tanpa posisi)
+  // Legacy support
   const showToast = useCallback(
     (type: ToastType, title: string, message?: string) => {
       addToast(type, title, message);
@@ -339,7 +348,7 @@ export function NotificationToastProvider({ children }: { children: React.ReactN
     >
       {children}
       
-      {/* Render Toast Container */}
+      {/* Toast Container */}
       {toasts.map((item) => (
         <Toast key={item.id} toastData={item} onDismiss={removeToast} />
       ))}
@@ -347,12 +356,13 @@ export function NotificationToastProvider({ children }: { children: React.ReactN
   );
 }
 
-// Backwards-compatible exports
-export function ToastProvider({ children }: { children: React.ReactNode }) {
+// Backwards-compatible export: `ToastProvider` expected by older layouts
+export function ToastProvider({ children, isDarkMode }: { children: React.ReactNode; isDarkMode?: boolean }) {
+  // `isDarkMode` was previously passed in by layout wrappers; it's not needed here
   return <NotificationToastProvider>{children}</NotificationToastProvider>;
 }
 
-// Custom Hook
+// Hook
 export function useToast() {
   const context = useContext(ToastContext);
   if (!context) {
@@ -361,5 +371,5 @@ export function useToast() {
   return context;
 }
 
-// Export Types
+// Export type for external use
 export type { GestureResponderEvent, ToastType };

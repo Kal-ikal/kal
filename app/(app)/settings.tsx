@@ -2,7 +2,7 @@
 // 📱 FRONT-END EXPO
 // 📁 Lokasi: annualbenefit/app/(app)/settings.tsx
 // 📝 Aksi: REPLACE file yang sudah ada
-// ✅ Phase 4: Position-aware toast + 2FA QR code
+// ✅ Phase 4: Position-aware toast + 2FA QR code + LogoutModal
 // ===========================================================
 
 import { useAuth } from "@/context/AuthContext";
@@ -55,6 +55,7 @@ import {
 } from "react-native";
 import QRCode from "react-native-qrcode-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import LogoutModal from "@/components/LogoutModal";
 
 cssInterop(LinearGradient, { className: "style" });
 
@@ -98,6 +99,9 @@ export default function SettingsScreen() {
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
+
+  // Logout Modal state
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // Fetch biometric status
   useEffect(() => {
@@ -304,19 +308,16 @@ export default function SettingsScreen() {
     }
   };
 
-  // Handle logout
+  // Handle logout dengan LogoutModal
   const handleLogout = () => {
-    Alert.alert("Keluar", "Apakah Anda yakin ingin keluar?", [
-      { text: "Batal", style: "cancel" },
-      {
-        text: "Keluar",
-        style: "destructive",
-        onPress: async () => {
-          await signOut();
-          router.replace("/(auth)/login");
-        },
-      },
-    ]);
+    setShowLogoutModal(true);
+  };
+
+  // Handle konfirmasi logout dari modal
+  const handleLogoutConfirm = async () => {
+    setShowLogoutModal(false);
+    await signOut();
+    router.replace("/(auth)/login");
   };
 
   const is2FAEnabled = mfaFactors.length > 0;
@@ -492,7 +493,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Logout */}
+        {/* Logout Button */}
         <TouchableOpacity
           className="mt-6 bg-red-500 rounded-2xl p-4 flex-row items-center justify-center"
           onPress={handleLogout}
@@ -691,6 +692,14 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Logout Modal */}
+      <LogoutModal
+        visible={showLogoutModal}
+        onClose={() => setShowLogoutModal(false)}
+        onConfirm={handleLogoutConfirm}
+        isDarkMode={isDarkMode}
+      />
     </View>
   );
 }

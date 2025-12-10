@@ -3,6 +3,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { enableScreens, enableFreeze } from "react-native-screens";
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { View } from 'react-native';
 import { useCustomBackHandler } from '../hooks/useCustomBackHandler';
 import { ThemeProvider, useTheme } from "../context/ThemeContext";
 import { AuthProvider } from "../context/AuthContext";
@@ -35,7 +36,7 @@ function RootLayoutNav() {
   usePushNotifications();
 
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: isDarkMode ? "#111827" : "#EFF6FF" }}>
       <NavigationBarConfig />
       <StatusBar translucent backgroundColor="transparent" style={isDarkMode ? "light" : "dark"} />
       
@@ -72,7 +73,7 @@ function RootLayoutNav() {
       </Stack>
       
       <AuthGuard />
-    </>
+    </View>
   );
 }
 
