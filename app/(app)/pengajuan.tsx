@@ -266,6 +266,40 @@ export default function PengajuanScreen() {
     }
   };
 
+  // Upload document to Supabase Storage
+  const uploadDocument = async (file: DocumentPickerAsset): Promise<string | null> => {
+    try {
+      const fileExt = file.name?.split('.').pop() || 'pdf';
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+      const filePath = `${session?.user?.id}/${fileName}`;
+
+      // Read file as blob
+      const response = await fetch(file.uri);
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('documents')
+        .upload(filePath, arrayBuffer, {
+          contentType: file.mimeType || 'application/pdf',
+          upsert: false,
+        });
+
+      if (error) throw error;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('documents')
+        .getPublicUrl(data.path);
+
+      return publicUrl;
+    } catch (error) {
+      console.error('Error uploading document:', error);
+      return null;
+    }
+  };
+
   const handleSubmit = async () => {
     if (!session?.user?.id || !selectedLeaveTypeId) {
       showError("Error", "Data tidak lengkap");
@@ -281,13 +315,22 @@ export default function PengajuanScreen() {
       setSubmitting(true);
       const formatDateForDB = (date: Date) => date.toISOString().split("T")[0];
 
+      // Upload document if exists
+      let documentUrl: string | undefined = undefined;
+      if (document) {
+        documentUrl = await uploadDocument(document) || undefined;
+        if (!documentUrl && selectedLeaveType?.requires_file) {
+          throw new Error("Gagal mengupload dokumen");
+        }
+      }
+
       const result = await submitLeaveRequest({
         userId: session.user.id,
         leaveTypeId: selectedLeaveTypeId,
         startDate: formatDateForDB(startDate),
         endDate: formatDateForDB(endDate),
         reason: reason.trim(),
-        documentUrl: document?.uri || undefined,
+        documentUrl,
       });
 
       if (!result.success) {

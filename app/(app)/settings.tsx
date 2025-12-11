@@ -19,6 +19,8 @@ import {
 } from "@/services/biometricService";
 import { useScrollToTop } from "@react-navigation/native";
 import * as Clipboard from "expo-clipboard";
+import * as LocalAuthentication from "expo-local-authentication";
+import * as SecureStore from "expo-secure-store";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -119,11 +121,16 @@ export default function SettingsScreen() {
     try {
       const { data, error } = await supabase.auth.mfa.listFactors();
       if (error) throw error;
-      
-      const verifiedFactors = data?.totp?.filter(f => f.status === 'verified') || [];
+
+      // Get all verified factors (not just totp)
+      const verifiedFactors = data?.all?.filter(f => f.status === 'verified') || [];
       setMfaFactors(verifiedFactors);
+
+      console.log('2FA Status:', { all: data?.all, verified: verifiedFactors });
     } catch (error) {
       console.error("Error fetching 2FA status:", error);
+      // On error, assume no 2FA
+      setMfaFactors([]);
     } finally {
       setLoading2FA(false);
     }
@@ -143,27 +150,39 @@ export default function SettingsScreen() {
     setLoadingBiometric(true);
     try {
       if (value) {
-        // Need user credentials to enable
-        Alert.alert(
-          "Aktifkan Biometrik",
-          "Masukkan password untuk mengaktifkan login biometrik",
-          [
-            { text: "Batal", style: "cancel" },
-            {
-              text: "Lanjut",
-              onPress: () => {
-                // For now, just enable it
-                // In real app, prompt for password
-                enableBiometric(session?.user?.email || "", "").then((success) => {
-                  if (success) {
-                    setBiometricEnabled(true);
-                    showSuccess("Berhasil", "Biometrik diaktifkan");
-                  }
-                });
-              },
-            },
-          ]
-        );
+        // Enable biometric (password already stored from first login)
+        const userEmail = session?.user?.email;
+        if (!userEmail) {
+          showError("Error", "Sesi tidak valid, silakan login ulang", event);
+          setLoadingBiometric(false);
+          return;
+        }
+
+        // Verify with biometric first
+        const result = await LocalAuthentication.authenticateAsync({
+          promptMessage: 'Verifikasi untuk Aktifkan Biometric',
+          fallbackLabel: 'Batal',
+          cancelLabel: 'Batal',
+        });
+
+        if (!result.success) {
+          showError("Dibatalkan", "Verifikasi biometrik dibatalkan", event);
+          setLoadingBiometric(false);
+          return;
+        }
+
+        // Check if credentials already stored (from initial login)
+        const credentialsStr = await SecureStore.getItemAsync('user_credentials');
+        if (!credentialsStr) {
+          showInfo("Info", "Silakan login ulang dengan password terlebih dahulu", event);
+          setLoadingBiometric(false);
+          return;
+        }
+
+        // Enable biometric
+        await SecureStore.setItemAsync('biometric_enabled', 'true');
+        setBiometricEnabled(true);
+        showSuccess("Berhasil", "Biometrik diaktifkan", event);
       } else {
         const success = await disableBiometric();
         if (success) {
@@ -172,7 +191,7 @@ export default function SettingsScreen() {
         }
       }
     } catch (error) {
-      void error;
+      console.error('Biometric toggle error:', error);
       showError("Gagal", "Tidak dapat mengubah pengaturan biometrik", event);
     } finally {
       setLoadingBiometric(false);
@@ -250,13 +269,24 @@ export default function SettingsScreen() {
           style: "destructive",
           onPress: async () => {
             try {
+              // Unenroll all factors
               for (const factor of mfaFactors) {
-                await supabase.auth.mfa.unenroll({ factorId: factor.id });
+                const { error } = await supabase.auth.mfa.unenroll({ factorId: factor.id });
+                if (error) throw error;
               }
-              showSuccess("Berhasil", "2FA berhasil dinonaktifkan");
-              fetch2FAStatus();
+
+              // Clear local state immediately
+              setMfaFactors([]);
+
+              // Refresh from server
+              await fetch2FAStatus();
+
+              showSuccess("Berhasil", "2FA berhasil dinonaktifkan", event);
             } catch (error: any) {
-              showError("Gagal", error.message || "Tidak dapat menonaktifkan 2FA");
+              console.error("Error disabling 2FA:", error);
+              showError("Gagal", error.message || "Tidak dapat menonaktifkan 2FA", event);
+              // Refresh status even on error
+              fetch2FAStatus();
             }
           },
         },
@@ -290,11 +320,27 @@ export default function SettingsScreen() {
 
     setChangingPassword(true);
     try {
-      const { error } = await supabase.auth.updateUser({
+      // Step 1: Re-authenticate dengan current password
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.email) {
+        throw new Error("User email not found");
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword,
+      });
+
+      if (signInError) {
+        throw new Error("Password saat ini salah");
+      }
+
+      // Step 2: Update password (setelah re-authenticate)
+      const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword,
       });
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
       showSuccess("Berhasil", "Password berhasil diubah", event);
       setShowPasswordModal(false);

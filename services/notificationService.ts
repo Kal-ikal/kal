@@ -34,7 +34,7 @@ export async function createNotificationWithPush({
         title,
         message,
         type,
-        read: false,
+        is_read: false,
       })
       .select()
       .single();

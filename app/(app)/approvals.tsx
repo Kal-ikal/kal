@@ -256,12 +256,13 @@ export default function ApprovalsScreen() {
                 // Create notification for requester
                 await supabase.from("notifications").insert({
                   user_id: request.user_id,
-                  title: nextStage === "completed" 
-                    ? "✅ Pengajuan Disetujui" 
+                  title: nextStage === "completed"
+                    ? "✅ Pengajuan Disetujui"
                     : "📋 Pengajuan Diproses",
                   message: nextStage === "completed"
                     ? `Pengajuan cuti Anda telah disetujui oleh ${getRoleLabel(profile.role)}.`
                     : `Pengajuan cuti Anda telah disetujui oleh ${getRoleLabel(profile.role)} dan diteruskan ke tahap berikutnya.`,
+                  type: 'leave_status',
                   is_read: false,
                 });
 
@@ -318,6 +319,7 @@ export default function ApprovalsScreen() {
         message: rejectReason
           ? `Pengajuan cuti Anda ditolak oleh ${getRoleLabel(profile.role)}. Alasan: ${rejectReason}`
           : `Pengajuan cuti Anda ditolak oleh ${getRoleLabel(profile.role)}.`,
+        type: 'leave_status',
         is_read: false,
       });
 

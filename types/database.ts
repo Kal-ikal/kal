@@ -80,6 +80,7 @@ export interface Notification {
   user_id: string;
   title: string;
   message: string;
+  type: string;
   is_read: boolean;
   link_to: string | null;
   created_at: string;
@@ -153,6 +154,7 @@ export interface NotificationInsert {
   user_id: string;
   title: string;
   message: string;
+  type?: string;
   is_read?: boolean;
   link_to?: string | null;
 }
